@@ -5,15 +5,15 @@ Helios POC — Documentation .docx generator
 Generates a Word document with:
   - Cover page
   - Executive summary
-  - Architecture (with matplotlib-generated diagram)
-  - Component inventory
-  - Explained code (the 10 apps + scripts + policy)
-  - Step-by-step setup
-  - Validation results
+  - Arquitectura (con diagrama generado por matplotlib)
+  - Inventario de componentes
+  - Código explicado (las 10 apps + scripts + policy)
+  - Setup paso a paso
+  - Resultados de validación
   - Troubleshooting
   - Roadmap
 
-Usage:
+Uso:
     python3 scripts/generate_docs.py [output.docx]
 
 Default output: docs/Helios-POC-Documentation.docx
@@ -26,7 +26,7 @@ from datetime import datetime
 from pathlib import Path
 
 import matplotlib
-matplotlib.use("Agg")  # no display
+matplotlib.use("Agg")  # sin display
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch, Rectangle
 import matplotlib.patches as mpatches
@@ -69,13 +69,13 @@ def add_paragraph(doc, text, bold=False, italic=False, size=None, color=None):
 
 
 def add_code_block(doc, code, language="bash"):
-    """Monospace code block with grey background."""
+    """Code block monospace con fondo gris."""
     code = _strip_control_chars(code)
     p = doc.add_paragraph()
     run = p.add_run(code)
     run.font.name = "Courier New"
     run.font.size = Pt(8)
-    # grey background via XML
+    # background gris via XML
     pPr = p._p.get_or_add_pPr()
     shd = OxmlElement("w:shd")
     shd.set(qn("w:fill"), "F4F4F4")
@@ -84,30 +84,32 @@ def add_code_block(doc, code, language="bash"):
 
 
 def _strip_control_chars(s):
-    """Remove NULL bytes, ANSI escapes, and any character that breaks XML/lxml."""
+    """Elimina NULL bytes, ANSI escapes y todo carácter que rompa XML/lxml."""
     import re
     if not isinstance(s, str):
         try:
             s = str(s)
         except Exception:
             return ""
-    # 1) Remove ANSI escapes and other C0/C1 controls (except \n, \r, \t)
-    s = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "?", s)
-    # 2) Remove ESC + CSI / OSC sequences that survive
-    s = re.sub(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])", "?", s)
-    s = re.sub(r"\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)", "?", s)
-    # 3) Remove any surrogate / non-BMP problematic char
+    # 1) Eliminar ANSI escapes COMPLETAMENTE (CSI, OSC, SGR, etc.) — sin reemplazar por ?
+    s = re.sub(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])", "", s)
+    s = re.sub(r"\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)", "", s)
+    # 2) Eliminar otros C0/C1 controls (excepto \n, \r, \t)
+    s = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "", s)
+    # 3) Eliminar cualquier surrogate / char no BMP problemático
     try:
         s = s.encode("utf-8", errors="replace").decode("utf-8", errors="replace")
     except Exception:
         s = ""
-    # 4) Replace characters that break lxml.add_t (Cc category + odd Unicode)
+    # 4) Reemplazar caracteres que rompen lxml.add_t (categoría Cc + Unicode raro)
     s = "".join(c if (c == "\n" or c == "\r" or c == "\t" or ord(c) >= 0x20) else "?" for c in s)
+    # 5) Limpiar espacios redundantes (ANSI a veces deja padding)
+    s = re.sub(r"[ \t]+$", "", s, flags=re.MULTILINE)  # trailing whitespace por línea
     return s
 
 
 def add_terminal_block(doc, text, label=""):
-    """'Terminal'-style block with black background and green/white text."""
+    """Bloque tipo 'terminal' con fondo negro y texto verde/blanco."""
     text = _strip_control_chars(text)
     if label:
         add_paragraph(doc, f"$ {label}", italic=True, size=9, color=RGBColor(0x66, 0x66, 0x66))
@@ -124,7 +126,7 @@ def add_terminal_block(doc, text, label=""):
 
 
 def add_table(doc, headers, rows, header_color="1F4E79"):
-    """Table with colored header."""
+    """Tabla con header coloreado."""
     table = doc.add_table(rows=1 + len(rows), cols=len(headers))
     table.style = "Light Grid Accent 1"
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -160,28 +162,28 @@ def add_image(doc, path, caption="", width_inches=6.0):
         doc.add_picture(str(path), width=Inches(width_inches))
         if caption:
             p = doc.add_paragraph()
-            run = p.add_run(f"Figure: {caption}")
+            run = p.add_run(f"Figura: {caption}")
             run.italic = True
             run.font.size = Pt(9)
             run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     else:
-        add_paragraph(doc, f"[missing image: {path}]", italic=True, color=RGBColor(0x99, 0x99, 0x99))
+        add_paragraph(doc, f"[imagen faltante: {path}]", italic=True, color=RGBColor(0x99, 0x99, 0x99))
 
 
 def add_page_break(doc):
     doc.add_page_break()
 
 
-# ---------- Helpers: diagrams ----------
+# ---------- Helpers: diagramas ----------
 def make_architecture_diagram(out_path):
-    """Generates architecture diagram with matplotlib."""
+    """Genera diagrama de arquitectura con matplotlib."""
     fig, ax = plt.subplots(figsize=(11, 7))
     ax.set_xlim(0, 12)
     ax.set_ylim(0, 8)
     ax.axis("off")
 
-    # Colors
+    # Colores
     col_idp = "#4A90E2"
     col_ctrl = "#F5A623"
     col_svc = "#7ED321"
@@ -202,40 +204,40 @@ def make_architecture_diagram(out_path):
             ax.text(x + w/2, y + h/2 - 0.18, sub,
                     ha="center", va="center", fontsize=7, color="white", style="italic")
 
-    # Layer 1: IdP
+    # Capa 1: IdP
     box(0.3, 6.5, 2.6, 1.0, col_idp, "Authentik", "Google Workspace sim")
 
-    # Layer 2: Control plane
+    # Capa 2: Control plane
     box(4.5, 6.5, 3.0, 1.0, col_ctrl, "Tailscale", "Control plane")
 
-    # Layer 3: Services (row 1)
+    # Tier 3: Services (row 1)
     box(0.3, 4.5, 1.8, 0.9, col_svc, "admin-portal", "")
     box(2.4, 4.5, 1.8, 0.9, col_svc, "identity-bridge", "")
     box(4.5, 4.5, 1.8, 0.9, col_svc, "api-gateway", "")
     box(6.6, 4.5, 1.8, 0.9, col_svc, "customer-portal", "")
     box(8.7, 4.5, 1.8, 0.9, col_svc, "ml-platform", "")
 
-    # Layer 3: Services (row 2)
+    # Tier 3: Services (row 2)
     box(0.3, 3.3, 1.8, 0.9, col_svc, "grafana", "")
     box(2.4, 3.3, 1.8, 0.9, col_svc, "intranet", "")
     box(4.5, 3.3, 1.8, 0.9, col_svc, "warehouse-job", "")
     box(6.6, 3.3, 1.8, 0.9, col_svc, "observability", "")
     box(8.7, 3.3, 1.8, 0.9, col_svc, "eks-gateway", "")
 
-    # Layer 4: Data
+    # Capa 4: Data
     box(2.4, 1.8, 3.0, 0.9, col_data, "primary-db", "Postgres 16")
     box(6.6, 1.8, 3.0, 0.9, col_data, "warehouse-db", "Postgres 16")
 
-    # Layer 5: Personas
+    # Capa 5: Personas
     box(0.3, 0.2, 1.6, 0.9, col_user, "diego", "platform-eng")
     box(2.0, 0.2, 1.6, 0.9, col_user, "rafa", "data-eng")
     box(3.7, 0.2, 1.6, 0.9, col_user, "sam", "sre")
     box(5.4, 0.2, 1.6, 0.9, col_user, "lena", "sre-lead")
     box(7.1, 0.2, 1.6, 0.9, col_user, "carla", "customer-success")
-    box(8.8, 0.2, 1.6, 0.9, col_user, "eve", "attacker")
+    box(8.8, 0.2, 1.6, 0.9, col_user, "eve", "atacante")
     box(10.6, 0.2, 1.2, 0.9, col_external, "ngrok", "")
 
-    # Arrows: IdP → Control
+    # Flechas: IdP → Control
     ax.annotate("", xy=(4.5, 7.0), xytext=(2.9, 7.0),
                 arrowprops=dict(arrowstyle="->", lw=1.5, color="gray"))
     ax.text(3.7, 7.2, "OIDC", fontsize=8, color="gray", ha="center")
@@ -249,45 +251,45 @@ def make_architecture_diagram(out_path):
         ax.annotate("", xy=(x_data, 2.7), xytext=(x_svc, 4.5),
                     arrowprops=dict(arrowstyle="->", lw=1, color="gray", alpha=0.5))
 
-    # Arrows: Personas → Control
+    # Flechas: Personas → Control
     for x_p in [1.1, 2.8, 4.5, 6.2, 7.9, 10.0]:
         ax.annotate("", xy=(x_p, 1.1), xytext=(x_p, 0.0),
                     arrowprops=dict(arrowstyle="->", lw=0.8, color="gray", alpha=0.4))
 
-    # Side text
+    # Texto lateral
     ax.text(11.5, 4.0, "↓ Tailscale\n   magicDNS\n↓ resolves\n   across all\n   containers",
             fontsize=7, color="gray", va="center")
 
-    # Legend
+    # Leyenda
     legend_elements = [
         mpatches.Patch(color=col_idp, label="Identity Provider"),
         mpatches.Patch(color=col_ctrl, label="Control plane"),
         mpatches.Patch(color=col_svc, label="Services (10)"),
         mpatches.Patch(color=col_data, label="Data layer (2)"),
         mpatches.Patch(color=col_user, label="People (8)"),
-        mpatches.Patch(color=col_external, label="External (ngrok)"),
+        mpatches.Patch(color=col_external, label="Externos (ngrok)"),
     ]
     ax.legend(handles=legend_elements, loc="upper right", fontsize=8, framealpha=0.9)
 
-    plt.title("Helios POC — Tailnet Architecture", fontsize=13, fontweight="bold")
+    plt.title("Helios POC — Arquitectura del Tailnet", fontsize=13, fontweight="bold")
     plt.tight_layout()
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close()
 
 
 def make_acl_matrix_diagram(out_path):
-    """Generates visual matrix of roles × resources."""
+    """Genera matriz visual de roles × recursos."""
     fig, ax = plt.subplots(figsize=(11, 8))
 
-    # Roles (rows) and services (columns)
+    # Roles (filas) y servicios (columnas)
     roles = ["platform-eng", "data-eng", "sre", "sre-lead",
              "customer-success", "sales-eng", "viewers", "admins"]
     services = ["admin-portal", "identity-bridge", "api-gateway", "customer-portal",
                 "primary-db", "warehouse-db", "ml-platform", "observability",
                 "eks-gateway:9100", "eks-gateway:9102", "grafana", "intranet"]
 
-    # Matrix: 1 = allow, 0 = deny
-    # Rows = roles, columns = services (in the same order as `services`)
+    # Matriz: 1 = allow, 0 = deny
+    # Filas = roles, columnas = servicios (en el mismo orden que `services`)
     #       adm idb agw cwp pdb wdb mlp obs eks9100 eks9102 gra intra
     matrix = [
         [1,    1,   1,   0,   0,   0,   0,   1,   0,     0,     1,   1   ],  # platform-eng
@@ -300,7 +302,7 @@ def make_acl_matrix_diagram(out_path):
         [1,    1,   1,   1,   1,   1,   1,   1,   1,     1,     1,   1   ],  # admins
     ]
 
-    # Draw matrix
+    # Dibujar matriz
     for i, role in enumerate(roles):
         for j, svc in enumerate(services):
             v = matrix[i][j]
@@ -321,17 +323,17 @@ def make_acl_matrix_diagram(out_path):
     ax.set_aspect("equal")
     ax.grid(False)
 
-    # Remove borders
+    # Quitar bordes
     for spine in ax.spines.values():
         spine.set_visible(False)
 
-    # Title and legend
-    plt.title("Access matrix: roles (rows) × services (columns)\n"
-              "Green = allow, Red = deny",
+    # Título y leyenda
+    plt.title("Matriz de acceso: roles (filas) × servicios (columnas)\n"
+              "Verde = allow, Rojo = deny",
               fontsize=12, fontweight="bold", pad=20)
     legend_elements = [
-        mpatches.Patch(color="#27ae60", label="Allow (can reach)"),
-        mpatches.Patch(color="#e74c3c", label="Deny (cannot reach)"),
+        mpatches.Patch(color="#27ae60", label="Allow (puede llegar)"),
+        mpatches.Patch(color="#e74c3c", label="Deny (no llega)"),
     ]
     ax.legend(handles=legend_elements, loc="upper left", bbox_to_anchor=(1.02, 1), fontsize=9)
 
@@ -341,10 +343,10 @@ def make_acl_matrix_diagram(out_path):
 
 
 def make_tag_hierarchy_diagram(out_path):
-    """Diagram of tags and their relationship with services and groups."""
+    """Diagrama de los tags y su relación con services y grupos."""
     fig, ax = plt.subplots(figsize=(11, 6))
 
-    # Layers: tags → services
+    # Capas: tags → services
     tags = [
         ("tag:admin-portal", "platform-eng"),
         ("tag:identity-bridge", "platform-eng"),
@@ -363,7 +365,7 @@ def make_tag_hierarchy_diagram(out_path):
     col_tag = "#7ED321"
     col_group = "#F5A623"
 
-    # Left column: groups / actors
+    # Columna izquierda: grupos / actores
     actors = [
         ("group:platform-eng",   col_actor, 1.0),
         ("group:data-eng",       col_actor, 2.0),
@@ -385,7 +387,7 @@ def make_tag_hierarchy_diagram(out_path):
         ))
         ax.text(1.0, y + 0.3, label, ha="center", va="center", fontsize=8, color="white", fontweight="bold")
 
-    # Right column: tags (services)
+    # Columna derecha: tags (servicios)
     tag_x = 9
     for i, (tag, _) in enumerate(tags):
         y = 11 - i * 0.9
@@ -397,13 +399,13 @@ def make_tag_hierarchy_diagram(out_path):
         ax.text(tag_x + 1.25, y + 0.35, tag, ha="center", va="center",
                 fontsize=8, color="white", fontweight="bold")
 
-    # Title and legend
-    plt.title("Mapping of groups / nested tags to service tags",
+    # Título y leyenda
+    plt.title("Mapeo de grupos / tags anidados a tags de servicio",
               fontsize=11, fontweight="bold")
     legend_elements = [
-        mpatches.Patch(color=col_actor, label="Groups (Google / Authentik)"),
-        mpatches.Patch(color=col_group, label="Tags (intermediate services)"),
-        mpatches.Patch(color=col_tag, label="Tags (exposed services)"),
+        mpatches.Patch(color=col_actor, label="Grupos (Google / Authentik)"),
+        mpatches.Patch(color=col_group, label="Tags (servicios intermedios)"),
+        mpatches.Patch(color=col_tag, label="Tags (servicios expuestos)"),
     ]
     ax.legend(handles=legend_elements, loc="upper left", fontsize=8)
 
@@ -413,21 +415,21 @@ def make_tag_hierarchy_diagram(out_path):
 
 
 def make_isolation_diagram(out_path):
-    """Diagram showing how docker networks simulate the isolation that
-    Tailscale would break through the tailnet overlay."""
+    """Diagrama que muestra cómo docker networks simulan el aislamiento que
+    Tailscale vendría a romper a través del tailnet overlay."""
     fig, ax = plt.subplots(figsize=(12, 7))
 
-    # Three visual groups
+    # Tres grupos visuales
     groups = [
-        ("data tier", 0.5, 5.0, ["primary-db", "warehouse-db", "rds-sim"], "#16a085"),
-        ("service tier", 4.0, 5.0, ["admin-portal", "identity-bridge", "api-gateway", "customer-portal",
+        ("tier datos", 0.5, 5.0, ["primary-db", "warehouse-db", "rds-sim"], "#16a085"),
+        ("tier servicios", 4.0, 5.0, ["admin-portal", "identity-bridge", "api-gateway", "customer-portal",
                                       "ml-platform", "warehouse-job", "observability", "eks-gateway",
                                       "grafana", "intranet"], "#2980b9"),
-        ("personas tier", 8.0, 5.0, ["diego-platform", "rafa-data", "sam-sre", "lena-sre-lead",
+        ("tier personas", 8.0, 5.0, ["diego-platform", "rafa-data", "sam-sre", "lena-sre-lead",
                                      "carla-cs", "tomas-sales", "nina-auditor", "eve-attacker"], "#e67e22"),
     ]
 
-    # Title of each group (large box)
+    # Título de cada grupo (recuadro grande)
     for name, x, y, items, color in groups:
         rect = mpatches.FancyBboxPatch(
             (x, y - 0.4), 3.0, 4.5,
@@ -449,35 +451,35 @@ def make_isolation_diagram(out_path):
             ax.text(ix + 0.675, iy + 0.21, item, ha="center", va="center",
                     fontsize=8, color=color)
 
-    # Tailscale overlay arrow (the "magic" that would break isolation)
+    # Flecha Tailscale overlay (la "magia" que rompería el aislamiento)
     ax.annotate("", xy=(11.0, 5.0), xytext=(0.4, 5.0),
                 arrowprops=dict(arrowstyle="<->", color="#8e44ad", lw=2.5, ls="--"))
-    ax.text(5.7, 5.65, "Tailscale tailnet overlay (100.x) — breaks isolation",
+    ax.text(5.7, 5.65, "Tailscale tailnet overlay (100.x) — quebranta el aislamiento",
             ha="center", fontsize=10, fontweight="bold", color="#8e44ad")
-    ax.text(5.7, 4.4, "Without tailnet: each container on its own bridge network — cross-tier traffic BLOCKED",
+    ax.text(5.7, 4.4, "Sin tailnet: cada container en su propia red bridge — tráfico cross-tier BLOQUEADO",
             ha="center", fontsize=9, style="italic", color="#7f8c8d")
 
-    # Footnote
+    # Nota al pie
     ax.text(6.0, 0.5,
-            "The POC forces isolation via separate docker networks so all traffic goes through Tailscale.\n"
-            "ACLs (tag-based) act as a filter on top of the tailnet.",
+            "El POC fuerza el aislamiento via docker networks separados para que todo el tráfico pase por Tailscale.\n"
+            "Las ACLs (tag-based) actúan como filtro encima del tailnet.",
             ha="center", fontsize=9, color="#34495e", style="italic")
 
     ax.set_xlim(0, 12)
     ax.set_ylim(0, 11)
     ax.set_aspect("equal")
     ax.axis("off")
-    plt.title("Network isolation in the POC: segregated docker bridges + Tailscale overlay",
+    plt.title("Aislamiento de red en el POC: docker bridges segregados + Tailscale overlay",
               fontsize=12, fontweight="bold", pad=20)
     plt.tight_layout()
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close()
 
 
-# ---------- Capture: run real commands ----------
+# ---------- Captura: ejecutar comandos reales ----------
 def capture_command(cmd, label, out_path):
-    """Runs a command and saves sanitized output."""
-    print(f"capturing: {label}")
+    """Ejecuta un comando y guarda output sanitizado."""
+    print(f"capturando: {label}")
     try:
         result = subprocess.run(
             cmd, shell=True, capture_output=True, text=True,
@@ -486,18 +488,18 @@ def capture_command(cmd, label, out_path):
         output = result.stdout
         if result.stderr:
             output += "\n--- stderr ---\n" + result.stderr
-        # Sanitize keys and tokens
+        # Sanitizar keys y tokens
         sanitized = sanitize(output)
         out_path.write_text(sanitized)
         return sanitized
     except Exception as e:
-        return f"Error capturing: {e}"
+        return f"Error capturando: {e}"
 
 
 def sanitize(text):
-    """Replaces sensitive tokens."""
+    """Reemplaza tokens sensibles."""
     import re
-    # Replace tokens tskey-auth-XXX and tskey-api-XXX
+    # Reemplazar tokens tskey-auth-XXX y tskey-api-XXX
     text = re.sub(r"tskey-(auth|api)-[A-Za-z0-9]+", r"tskey-\1-***REDACTED***", text)
     text = re.sub(r"ngrok[_-][a-z]+", "***REDACTED***", text, flags=re.I)
     return text
@@ -505,7 +507,7 @@ def sanitize(text):
 
 # ---------- Main .docx generator ----------
 def generate(out_path):
-    print(f"Generating {out_path}...")
+    print(f"Generando {out_path}...")
 
     doc = Document()
 
@@ -531,17 +533,17 @@ def generate(out_path):
     meta.add_run(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n").italic = True
     meta.add_run("Working dir: /home/cmarin78/Documents/Projects/MiniMax/Headscale/\n").italic = True
     meta.add_run("Tailnet: cerberusbyte.com (Tailscale Business trial)\n").italic = True
-    meta.add_run("10 services + 9 personas + 13 tags + 1 IdP + 1 EKS sim + ngrok tunnel").italic = True
+    meta.add_run("10 services + 9 personas + 13 tags + 1 IdP + 1 simulated EKS + ngrok tunnel").italic = True
 
     doc.add_page_break()
 
-    # ---------- Table of contents ----------
+    # ---------- Tabla de contenidos ----------
     add_heading(doc, "Table of contents", level=1)
     toc = [
         "1. Executive summary",
-        "2. POC architecture",
+        "2. POC Architecture",
         "3. Component inventory",
-        "4. Tag and services map",
+        "4. Tag and service map",
         "5. Access matrix (roles × resources)",
         "6. Apps explained (code + decisions)",
         "7. Identity layer (Authentik + Google Workspace)",
@@ -551,7 +553,7 @@ def generate(out_path):
         "11. End-to-end validation (real results)",
         "12. Troubleshooting",
         "13. Maturity roadmap",
-        "14. Tailscale SaaS vs Headscale comparison",
+        "14. Comparison: Tailscale SaaS vs Headscale",
     ]
     for item in toc:
         doc.add_paragraph(item)
@@ -560,45 +562,45 @@ def generate(out_path):
     # ---------- 1. Executive summary ----------
     add_heading(doc, "1. Executive summary", level=1)
     add_paragraph(doc,
-        "Helios is a fictional B2B SaaS company (B2B SaaS for AP automation aimed at fintechs) "
-        "used as a vehicle to validate the corporate access management pattern with Tailscale."
+        "Helios is a fictional B2B SaaS company (B2B SaaS for accounts-payable automation used by fintechs) "
+        "used as the vehicle to validate the corporate access-management pattern with Tailscale."
     )
     add_paragraph(doc,
-        "The POC demonstrates that an organization of ~50 employees can replace OpenVPN with Tailscale + "
-        "Google Workspace SSO + tag-based ACLs, obtaining granularity per team, environment, and resource, "
-        "with less attack surface and a better user experience."
+        "The POC proves that an organization of ~50 employees can replace OpenVPN with Tailscale + "
+        "Google Workspace SSO + tag-based ACLs, gaining per-team, per-environment, and per-resource "
+        "granularity with less attack surface and a better user experience."
     )
     add_paragraph(doc, "Key results:", bold=True)
     bullets = [
-        "10 services + 9 personas + 1 simulated EKS cluster operated with a single CLI (heliosctl).",
-        "13 tags in the policy allow fine-grained control per team, environment, and privilege level.",
+        "10 services + 9 personas + 1 simulated EKS cluster operated by a single CLI (heliosctl).",
+        "13 tags in the policy give fine-grained control by team, environment, and privilege level.",
         "9 Google groups mapped to 4 access tiers (admin / engineer / operator / viewer).",
-        "The pattern is portable: the same policy.hujson works in both Tailscale SaaS and Headscale self-hosted.",
+        "The pattern is portable: the same policy.hujson works on both Tailscale SaaS and self-hosted Headscale.",
         "Full setup takes < 30 minutes with Docker + kind + kubectl preinstalled.",
     ]
     for b in bullets:
         doc.add_paragraph(b, style="List Bullet")
     doc.add_page_break()
 
-    # ---------- 2. Architecture ----------
-    add_heading(doc, "2. POC architecture", level=1)
+    # ---------- 2. Arquitectura ----------
+    add_heading(doc, "2. POC Architecture", level=1)
     add_paragraph(doc,
         "The POC is composed of 5 layers: identity, control plane, services, data, and personas. "
-        "Each layer is a separate domain; crossings between layers go through the tailnet."
+        "Each layer is a separate domain; cross-layer hops go through the tailnet."
     )
 
     # Generate and insert architecture diagram
     arch_path = CAPTURES_DIR / "architecture.png"
     make_architecture_diagram(arch_path)
-    add_image(doc, arch_path, "Layered architecture of the Helios POC", width_inches=6.5)
+    add_image(doc, arch_path, "Layer architecture of the Helios POC", width_inches=6.5)
 
-    add_paragraph(doc, "Key architectural decisions:", bold=True)
+    add_paragraph(doc, "Key architecture decisions:", bold=True)
     decisions = [
-        ("Per-container tailscale sidecar", "Each service has a `tailscale/tailscale:latest` sidecar that shares the network namespace. The service sees the `tailscale0` interface and resolves MagicDNS as if it were in the real tailnet."),
-        ("One isolated Docker network per node", "Forces inter-service traffic to cross the real tailnet, not Compose's embedded DNS. Without this, ACLs would be irrelevant."),
-        ("environment as a map, not a list", "Known Compose bug: if `environment:` is a list, `<<: *ts-env` overwrites everything. As a map, it merges correctly. Critical so `TS_USERSPACE=false` isn't lost."),
-        ("Simulated IdP (Authentik) → real IdP (Google Workspace) drop-in", "The swap in prod is 1 line: change the issuer URL. The policy doesn't need modification."),
-        ("Simulated EKS with kind", "Allows validating RBAC + tag-based access without spending on a real cluster. Differences documented in `eks/docs/overview.md`."),
+        ("Tailscale sidecar per container", "Each service has a `tailscale/tailscale:latest` sidecar that shares the network namespace. The service sees the `tailscale0` interface and resolves MagicDNS as if it were in the real tailnet."),
+        ("One isolated Docker network per node", "Forces service-to-service traffic to cross the real tailnet rather than the embedded Compose DNS. Without this, ACLs would be meaningless."),
+        ("environment as a map, not a list", "Known Compose gotcha: if `environment:` is a list, `<<: *ts-env` overwrites everything. As a map, it merges correctly. Critical so `TS_USERSPACE=false` is not lost."),
+        ("Simulated IdP (Authentik) -> Real IdP (Google Workspace) drop-in", "Prod swap is a one-line change: update the issuer URL. The policy does not need to change."),
+        ("EKS simulated with kind", "Lets you validate RBAC + tag-based access without paying for a real cluster. Differences are documented in `eks/docs/overview.md`."),
     ]
     for title, body in decisions:
         p = doc.add_paragraph()
@@ -620,16 +622,16 @@ def generate(out_path):
         ["tag:primary-db",       "data",    "5432", "Transactional DB (Postgres)"],
         ["tag:warehouse-db",     "data",    "5432", "Data warehouse (Postgres)"],
         ["tag:ml-platform",      "service", "8501", "ML serving (fraud + categorizer)"],
-        ["tag:warehouse-job",    "service", "n/a",  "ETL: primary → warehouse"],
+        ["tag:warehouse-job",    "service", "n/a",  "ETL: primary -> warehouse"],
         ["tag:observability",    "service", "9100", "Metrics + logs + access log"],
         ["tag:eks-gateway",      "service", "9100/9101/9102", "EKS gateway: metrics/logs/exec"],
         ["tag:grafana",          "service", "3000", "Visual dashboards"],
-        ["tag:intranet",         "service", "7000", "Internal portal (employee-facing)"],
-        ["(user-owned)",         "person",  "n/a",  "Diego, Rafa, Sam, Lena, Carla, Tomás, Nina, Eve"],
+        ["tag:intranet",         "service", "7000", "Internal employee-facing portal"],
+        ["(user-owned)",         "person",  "n/a",  "Diego, Rafa, Sam, Lena, Carla, Tomas, Nina, Eve"],
     ]
     add_table(doc, inv_headers, inv_rows)
 
-    add_paragraph(doc, "Supporting components (not services):", bold=True)
+    add_paragraph(doc, "Support components (not services):", bold=True)
     sup_headers = ["Component", "Image / source", "Port", "Purpose"]
     sup_rows = [
         ["Authentik server",  "ghcr.io/goauthentik/server:2024.10", "9000", "Simulated IdP (Google Workspace)"],
@@ -643,11 +645,11 @@ def generate(out_path):
     doc.add_page_break()
 
     # ---------- 4. Tag map ----------
-    add_heading(doc, "4. Tag and services map", level=1)
+    add_heading(doc, "4. Tag and service map", level=1)
     add_paragraph(doc,
-        "The POC defines 13 tags modeling each service or resource. "
-        "Google groups (from IdP) and service tags (from intermediate services) "
-        "combine to form the access control matrix."
+        "The POC defines 13 tags that model every service or resource. "
+        "Google groups (from the IdP) and service tags (from intermediate services) "
+        "combine to form the access-control matrix."
     )
     tag_path = CAPTURES_DIR / "tag_hierarchy.png"
     make_tag_hierarchy_diagram(tag_path)
@@ -669,9 +671,9 @@ def generate(out_path):
     doc.add_page_break()
 
     # ---------- 5. Access matrix ----------
-    add_heading(doc, "5. Access matrix (roles × resources)", level=1)
+    add_heading(doc, "5. Access matrix (roles x resources)", level=1)
     add_paragraph(doc,
-        "Each green cell indicates the role can reach the service; each red cell indicates deny. "
+        "Each green cell means the role can reach the service; each red cell means deny. "
         "The matrix is built entirely from policy.hujson. "
         "This is the most important view for auditors and security review."
     )
@@ -681,10 +683,10 @@ def generate(out_path):
 
     add_paragraph(doc, "General rules:", bold=True)
     rules = [
-        "Default-deny: any (src, dst) not explicitly allowed is DENIED.",
-        "Tags as service identity: identity-bridge and warehouse-job can touch primary-db; no one else.",
-        "Granularity by port on EKS: 9100 = metrics (everyone), 9101 = logs (no auditors), 9102 = exec (sre-lead only).",
-        "External users do NOT touch infra: customer-success and sales-eng do not reach admin-portal nor DBs.",
+        "Default-deny: any (src, dst) not explicitly permitted is DENIED.",
+        "Tags as service identity: identity-bridge and warehouse-job may touch primary-db; nobody else.",
+        "Per-port granularity in EKS: 9100 = metrics (everyone), 9101 = logs (no auditors), 9102 = exec (sre-lead only).",
+        "External users do NOT touch infra: customer-success and sales-eng cannot reach admin-portal or any DB.",
         "Viewers do NOT have SSH: read-only access via observability only.",
     ]
     for r in rules:
@@ -695,7 +697,7 @@ def generate(out_path):
     add_heading(doc, "6. Apps explained (code + decisions)", level=1)
     add_paragraph(doc,
         "Each app is a realistic mock of the service it represents. "
-        "They are built in Flask (Python 3.12) for portability and simplicity. "
+        "They are built on Flask (Python 3.12) for portability and simplicity. "
         "In production, they would be replaced by Helios's real services without changing the network contract."
     )
 
@@ -715,8 +717,8 @@ def whoami():
     return jsonify({"authenticated_via": "none"})"""),
 
         ("identity-bridge", "9090",
-         "Generic SSO bridge. Reads DB credentials from MiniStack (simulated Secrets Manager) at runtime. "
-         "Lazy cache so it doesn't fail at boot if MiniStack isn't ready.",
+         "Generic SSO bridge. Reads DB credentials from MiniStack (Secrets Manager sim) at runtime. "
+         "Uses lazy caching so the boot does not fail if MiniStack is not yet ready.",
          """SECRET_ID = os.environ.get("SECRETS_MANAGER_SECRET_ID", "helios/poc/secrets")
 
 def get_dsn():
@@ -728,7 +730,7 @@ def get_dsn():
     return _dsn_cache"""),
 
         ("api-gateway", "8443",
-         "B2B REST API. Mock endpoints that return invoices and customers. "
+         "B2B REST API. Mock endpoints returning invoices and customers. "
          "In production, this would be the gateway that validates API keys against the customer portal.",
          """@app.get("/v1/invoices")
 def list_invoices():
@@ -740,7 +742,7 @@ def list_invoices():
     })"""),
 
         ("customer-portal", "9443",
-         "External portal for Helios customers. In prod exposed via Tailscale Funnel (public HTTPS). "
+         "External portal for Helios customers. In prod it is exposed via Tailscale Funnel (public HTTPS). "
          "Uses `socket.gethostname()` to identify the instance in logs.",
          """@app.get("/dashboard")
 def dashboard():
@@ -755,8 +757,8 @@ def dashboard():
     })"""),
 
         ("grafana", "3000",
-         "Real Grafana (not a mock). Pre-loaded with Prometheus datasource pointing to observability:9100 "
-         "and a 'Helios POC — Overview' dashboard with DB pool and node count metrics.",
+         "Real Grafana (not a mock). Pre-loaded with a Prometheus datasource pointing at observability:9100 "
+         "and a 'Helios POC - Overview' dashboard with DB pool and node-count metrics.",
          """# provisioning/datasources/datasources.yaml
 datasources:
   - name: Prometheus
@@ -765,9 +767,9 @@ datasources:
     isDefault: true"""),
 
         ("intranet", "7000",
-         "Internal portal (employee-facing). Has sections `/engineering` (engineers only), "
-         "`/admin-tools` (admins only), `/people` (public). Access decisions are made "
-         "by evaluating the `Tailscale-User-Groups` headers against expected groups.",
+         "Internal portal (employee-facing). Has `/engineering` (engineers only), "
+         "`/admin-tools` (admins only), `/people` (public) sections. Access decisions are made "
+         "by evaluating `Tailscale-User-Groups` headers against expected groups.",
          """@app.get("/admin-tools")
 def admin_tools():
     groups = get_user_groups()
@@ -777,8 +779,8 @@ def admin_tools():
     return jsonify({"section": "admin-tools", "tools": [...]})"""),
 
         ("eks-gateway", "9100/9101/9102",
-         "Simulates 3 EKS resources in a single container with different ports. "
-         "Each port is a 'resource' from the ACL's point of view: metrics / logs / exec.",
+         "Simulates 3 EKS resources in a single container on different ports. "
+         "Each port is a 'resource' from the ACL point of view: metrics / logs / exec.",
          """RESOURCES = {
     9100: {"resource": "metrics", "sample": {"nodes": 3, "cpu_pct_avg": 23.5}},
     9101: {"resource": "logs", "sample": ["INFO api-gateway: ..."]},
@@ -786,8 +788,8 @@ def admin_tools():
 }"""),
 
         ("observability", "9100",
-         "Service that emits metrics in Prometheus format. The Grafana dashboard consumes them. "
-         "Maintains an in-memory access log that Nina (auditor) can read.",
+         "Service emitting Prometheus-formatted metrics. The Grafana dashboard consumes them. "
+         "Keeps an in-memory access log that Nina (auditor) can read.",
          """@app.get("/metrics")
 def metrics():
     lines = [
@@ -798,7 +800,7 @@ def metrics():
     return ("\\n".join(lines), 200, {"Content-Type": "text/plain"})"""),
 
         ("ml-platform", "8501",
-         "Mock ML serving. Deterministic predictions (based on input hash) "
+         "Mock ML serving. Deterministic predictions (based on a hash of the input) "
          "so tests are reproducible.",
          """@app.post("/predict/fraud")
 def predict_fraud():
@@ -808,9 +810,9 @@ def predict_fraud():
     return jsonify({"invoice_id": ..., "fraud_score": round(score, 4)})"""),
 
         ("warehouse-job", "n/a",
-         "One-shot ETL job. Reads invoices from primary-db, writes aggregates to warehouse-db. "
+         "One-shot ETL job. Reads invoices from primary-db, writes aggregates into warehouse-db. "
          "The only job that touches both DBs.",
-         """# Read invoices from primary-db, write aggregates to warehouse-db
+         """# Read invoices from primary-db, write aggregates into warehouse-db
 with psycopg.connect(_dsn(primary)) as conn:
     cur.execute("SELECT id, customer_id, amount_cents, status FROM helios.invoices")
     rows = cur.fetchall()
@@ -819,7 +821,7 @@ with psycopg.connect(_dsn(warehouse)) as conn:
     ]
 
     for name, port, desc, code in apps:
-        add_heading(doc, f"  • {name} (port {port})", level=2)
+        add_heading(doc, f"  - {name} (port {port})", level=2)
         add_paragraph(doc, desc)
         add_code_block(doc, code.strip(), language="python")
         doc.add_paragraph()
@@ -830,7 +832,7 @@ with psycopg.connect(_dsn(warehouse)) as conn:
     add_heading(doc, "7. Identity layer (Authentik + Google Workspace)", level=1)
     add_paragraph(doc,
         "Authentik runs as a Docker container and simulates Google Workspace for the POC. "
-        "It has an API that allows creating users, groups, and configuring an OIDC provider programmatically."
+        "It exposes an API to create users, groups, and configure an OIDC provider programmatically."
     )
 
     add_paragraph(doc, "User and group bootstrap (seed.py):", bold=True)
@@ -856,19 +858,19 @@ def main():
         for gname in u.get("groups", []):
             api.add_user_to_group(user_pk, group_pks[gname])
 
-    # Configure OIDC provider for Tailscale
+    # Configure the OIDC provider for Tailscale
     api.ensure_oidc_provider()""", language="python")
 
     add_paragraph(doc, "Group mapping in the POC:", bold=True)
-    group_headers = ["Group", "Example persona", "Role at Helios"]
+    group_headers = ["Group", "Example persona", "Role in Helios"]
     group_rows = [
         ["helios-admin", "Maya",     "Ops lead, full access"],
         ["platform-eng", "Diego",    "Operates core services"],
         ["data-eng",     "Rafa",     "Maintains warehouse + ML"],
         ["sre",          "Sam",      "Reads metrics/logs, no exec"],
-        ["sre-lead",     "Lena",     "SRE + exec on EKS"],
+        ["sre-lead",     "Lena",     "SRE + exec in EKS"],
         ["customer-success","Carla", "Customer support"],
-        ["sales-eng",    "Tomás",    "Prospect demos"],
+        ["sales-eng",    "Tomas",    "Demos for prospects"],
         ["auditors",     "Nina",     "External audit (read-only)"],
         ["untrusted",    "Eve",      "Simulated attacker account"],
     ]
@@ -876,15 +878,15 @@ def main():
 
     add_paragraph(doc,
         "Important: groups are created in Authentik but NOT in Tailscale until a user "
-        "logs in via SSO. The Tailscale API validates that each referenced `group:X` exists in the tailnet."
+        "logs in via SSO. The Tailscale API validates that every `group:X` referenced in the policy exists in the tailnet."
     )
     doc.add_page_break()
 
     # ---------- 8. EKS ----------
     add_heading(doc, "8. Simulated EKS cluster (kind + RBAC)", level=1)
     add_paragraph(doc,
-        "The `eks/` module brings up a real Kubernetes cluster using kind (3 nodes, 1 control-plane + 2 workers), "
-        "applies 3 ClusterRoles (viewer/editor/admin) and deploys 3 workloads that simulate metrics, logs, and exec."
+        "The `eks/` module spins up a real Kubernetes cluster using kind (3 nodes, 1 control-plane + 2 workers), "
+        "applies 3 ClusterRoles (viewer/editor/admin), and deploys 3 workloads that simulate metrics, logs, and exec."
     )
 
     add_paragraph(doc, "RBAC matrix:", bold=True)
@@ -904,7 +906,7 @@ yes
 $ kubectl auth can-i create pods --as=system:serviceaccount:kube-system:k8s-viewer
 no
 
-# editor: read+write on dev, NOT on prod
+# editor: read+write in dev, NOT in prod
 $ kubectl auth can-i create pods --as=system:serviceaccount:kube-system:k8s-editor -n helios-dev
 yes
 
@@ -915,7 +917,7 @@ no
 $ kubectl auth can-i '*' '*' --as=system:serviceaccount:kube-system:k8s-admin
 yes""", language="bash")
 
-    add_paragraph(doc, "Differences from real EKS:", bold=True)
+    add_paragraph(doc, "Differences vs real EKS:", bold=True)
     diff_rows = [
         ["IRSA (IAM Roles for Service Accounts)", "❌", "✅"],
         ["AWS VPC CNI", "❌ (kindnet)", "✅"],
@@ -924,41 +926,41 @@ yes""", language="bash")
         ["Managed node groups", "❌", "✅"],
         ["99.95% SLA", "❌", "✅"],
     ]
-    add_table(doc, ["Feature", "kind", "real EKS"], diff_rows)
+    add_table(doc, ["Feature", "kind", "EKS real"], diff_rows)
     doc.add_page_break()
 
     # ---------- 9. ngrok + SSO ----------
     add_heading(doc, "9. ngrok + Tailscale SSO", level=1)
     add_paragraph(doc,
-        "Tailscale SaaS cannot call localhost for the OIDC callback. "
+        "Tailscale SaaS cannot reach localhost for the OIDC callback. "
         "ngrok exposes Authentik (on localhost:9000) at a public HTTPS URL. "
-        "That URL is configured as 'Issuer URL' in the Tailscale admin console."
+        "That URL is configured as the 'Issuer URL' in the Tailscale admin console."
     )
 
     add_paragraph(doc, "Setup (summary):", bold=True)
-    add_code_block(doc, """# 1. Obtener authtoken
+    add_code_block(doc, """# 1. Get the authtoken
 $ ngrok config add-authtoken <YOUR_TOKEN>
 
-# 2. Bring up ngrok
+# 2. Bring ngrok up
 $ docker compose -f ngrok/docker-compose.ngrok.yml up -d
 
-# 3. Copy the public URL assigned by ngrok
+# 3. Copy the public URL ngrok assigned
 $ docker logs helios-ngrok | grep tunnel
-→ https://abc123.ngrok-free.app → http://authentik-server:9000
+-> https://abc123.ngrok-free.app -> http://authentik-server:9000
 
 # 4. Configure Authentik with that public URL
 #    (change AUTHENTIK_HOST in docker-compose.identity.yml)
 
 # 5. Configure SSO in the Tailscale admin console
-#    Settings → Single Sign-On → Connect Identity Provider
+#    Settings -> Single Sign-On -> Connect Identity Provider
 #    Issuer URL: https://abc123.ngrok-free.app/application/o/helios-tailnet/
 #    Client ID: helios-tailnet-client
 #    Client Secret: the one generated by seed.py""", language="bash")
 
     add_paragraph(doc, "Limitations:", bold=True)
     limits = [
-        "Random URL on every restart (free plan). For paid demos: custom domain $8/mo.",
-        "1 GB/mo bandwidth (free). OK for POC, not for prod.",
+        "Random URL on every restart (free plan). For paid demos: custom domain $8/month.",
+        "1 GB/month bandwidth (free). OK for POC, not for prod.",
         "'Visit ngrok.com' message in the browser (free tier).",
     ]
     for l in limits:
@@ -973,7 +975,7 @@ $ brew install docker docker-compose ngrok kind kubectl terraform
 
 # Linux (Ubuntu/Debian)
 $ curl -fsSL https://get.docker.com | sh
-$ sudo usermod -aG docker $USER  # log out and back in
+$ sudo usermod -aG docker $USER  # re-login
 $ # ... ngrok, kind, kubectl, terraform from their official sites""", language="bash")
 
     add_paragraph(doc, "POC setup:", bold=True)
@@ -983,7 +985,7 @@ $ cp .env.example .env
 $ $EDITOR .env
 #   Paste TS_AUTHKEY_* (18), TAILSCALE_API_KEY, NGROK_AUTHTOKEN, passwords
 
-# 2. Bring up the whole stack
+# 2. Bring the whole stack up
 $ ./scripts/heliosctl start all
 
 # 3. Validate
@@ -992,7 +994,7 @@ $ ./scripts/heliosctl validate
 # 4. Guided demo
 $ ./scripts/demo.sh --fast
 
-# 5. Cleanup
+# 5. Clean up
 $ ./scripts/heliosctl stop all    # stop containers
 $ ./scripts/heliosctl destroy     # nuke EVERYTHING""", language="bash")
 
@@ -1015,7 +1017,7 @@ done""", language="bash")
     add_heading(doc, "11. End-to-end validation (real results)", level=1)
     add_paragraph(doc, "The `heliosctl validate` command runs 7 checks and emits a report:")
 
-    # Capture validate live (or use known output if it fails)
+    # Capture validate live (or use the known output if it fails)
     validate_out = capture_command(
         "cd /home/cmarin78/Documents/Projects/MiniMax/Headscale/tailscale && ./scripts/heliosctl validate 2>&1",
         "validate",
@@ -1024,15 +1026,15 @@ done""", language="bash")
     add_terminal_block(doc, validate_out, label="heliosctl validate")
 
     add_paragraph(doc, "Acceptance checklist:", bold=True)
-    check_headers = ["Check", "State", "Notes"]
+    check_headers = ["Check", "Status", "Notes"]
     check_rows = [
-        [".env has ≥10 auth keys", "✓", f"{validate_out.split('tiene ')[1].split(' auth')[0] if 'tiene ' in validate_out else 'OK'} detected"],
-        ["docker-compose.yml valid", "✓", "docker compose config --quiet passes"],
-        ["Apps have Dockerfile or base image", "✓", "10/10 services"],
-        ["policy.hujson parses as JSONC", "✓", f"{validate_out.split('JSONC valid: ')[1].split('\\n')[0] if 'JSONC valid' in validate_out else 'OK'}"],
-        ["Containers running (expected count)", "⚠", "not started in sandbox due to address pool limit"],
-        ["Tailscale API accessible", "skip", "TAILSCALE_API_KEY not set in this test"],
-        ["ngrok running", "skip", "not started in this test"],
+        [".env has >=10 auth keys", "OK", f"{validate_out.split('tiene ')[1].split(' auth')[0] if 'tiene ' in validate_out else 'OK'} detected"],
+        ["docker-compose.yml valid", "OK", "docker compose config --quiet passes"],
+        ["Apps have a Dockerfile or base image", "OK", "10/10 services"],
+        ["policy.hujson parses as JSONC", "OK", f"{validate_out.split('JSONC válido: ')[1].split('\\n')[0] if 'JSONC válido' in validate_out else 'OK'}"],
+        ["Containers running (expected count)", "WARN", "not brought up in sandbox due to address pool limit"],
+        ["Tailscale API reachable", "skip", "TAILSCALE_API_KEY not set in this test"],
+        ["ngrok running", "skip", "not brought up in this test"],
     ]
     add_table(doc, check_headers, check_rows)
     doc.add_page_break()
@@ -1041,31 +1043,31 @@ done""", language="bash")
     add_heading(doc, "11-pre. ngrok + Authentik exposing IdP via public HTTPS", level=1)
     add_paragraph(doc,
         "With NGROK_AUTHTOKEN configured in .env, ngrok started a public HTTPS tunnel that "
-        "redirects to Authentik-server:9000 inside the Docker network. The public URL is "
+        "forwards to Authentik-server:9000 inside the Docker network. That public URL is "
         "what Tailscale SaaS would use as redirect_uri for the SSO callback (instead of "
-        "localhost:9000 which is unreachable from Tailscale's servers)."
+        "localhost:9000, which is unreachable from Tailscale's servers)."
     )
-    add_paragraph(doc, "Current tunnel state:", bold=True)
+    add_paragraph(doc, "Current tunnel status:", bold=True)
     auth_rows = [
-        ["ngrok tunnel", "authentik → http://authentik-server:9000"],
+        ["ngrok tunnel", "authentik -> http://authentik-server:9000"],
         ["Public URL", "https://sardine-overact-blast.ngrok-free.dev (ngrok-free.dev plan)"],
         ["Proto", "https"],
         ["Inspect UI", "http://localhost:4040 (sandbox)"],
         ["Connections served", "2 requests"],
         ["Authentik /-/health/live/", "HTTP 200 via public URL"],
         ["Authentik /api/v3/", "HTTP 200 via public URL"],
-        ["Authentik / (login redirect)", "HTTP 302 → /if/flow/default-authentication-flow/ → HTTP 200"],
+        ["Authentik / (login redirect)", "HTTP 302 -> /if/flow/default-authentication-flow/ -> HTTP 200"],
         ["Docker network", "ngrok connected to ngrok_default + tailscale_default (manually)"],
     ]
     add_table(doc, ["Aspect", "Value"], auth_rows)
 
-    add_paragraph(doc, "Next step — use the public URL in Tailscale SSO:", bold=True)
+    add_paragraph(doc, "Next step - use the public URL in Tailscale SSO:", bold=True)
     add_paragraph(doc,
         "1. Copy the public URL: https://sardine-overact-blast.ngrok-free.dev\n"
-        "2. In Tailscale admin console: Settings → SSO → Configure → Authentik issuer URL = that URL\n"
+        "2. In Tailscale admin console: Settings -> SSO -> Configure -> Authentik issuer URL = that URL\n"
         "3. Redirect URI: https://sardine-overact-blast.ngrok-free.dev/application/o/callback/\n"
         "4. Authentik application: helios-tailnet (already created by bootstrap), add the URL\n"
-        "5. Click 'Test connection' in Tailscale — it should open the Authentik flow\n"
+        "5. Click 'Test connection' in Tailscale - it should open the Authentik flow\n"
         "6. Once SSO works, Google Workspace users can log in via the simulated IdP"
     )
 
@@ -1078,8 +1080,8 @@ done""", language="bash")
 
     add_paragraph(doc, "Validation 7/7:", bold=True)
     add_paragraph(doc,
-        "After adding NGROK_AUTHTOKEN to .env, bringing up ngrok and Authentik, and applying "
-        "three fixes to heliosctl (tsctl.py path, is_running, partial-containers not failed, "
+        "After adding NGROK_AUTHTOKEN to .env, bringing ngrok and Authentik up, and applying "
+        "three fixes to heliosctl (tsctl.py path, is_running, partial-containers-not-failed, "
         "URL pattern .ngrok-free.dev), `heliosctl validate` passes all 7 checks:",
         italic=True
     )
@@ -1092,45 +1094,45 @@ done""", language="bash")
     doc.add_page_break()
 
     # ---------- 11c. Cross-service real traffic via Tailscale WireGuard ----------
-    add_heading(doc, "11c. Real cross-service traffic (5 sidecars logged in tailnet, 100.x IPs)", level=1)
+    add_heading(doc, "11c. Cross-service real traffic (5 sidecars logged in tailnet, 100.x IPs)", level=1)
     add_paragraph(doc,
-        "In this sandbox 9 services of the new schema were brought up (admin-portal, identity-bridge, "
+        "In this sandbox, 9 services from the new schema (admin-portal, identity-bridge, "
         "api-gateway, customer-portal, ml-platform, observability, primary-db, warehouse-db, grafana + intranet) "
-        "with their tailscale sidecars. 5 of the sidecars authenticated with TS_AUTHKEY_* and logged into the "
-        "cerberusbyte.com tailnet, receiving 100.x IPs and MagicDNS names (admin-portal.taila1b884.ts.net, etc.)."
+        "were brought up with their tailscale sidecars. 5 of the sidecars authenticated with TS_AUTHKEY_* and logged into "
+        "the tailnet cerberusbyte.com, receiving 100.x IPs and MagicDNS names (admin-portal.taila1b884.ts.net, etc.)."
     )
-    add_paragraph(doc, "Logged-in sidecars state:", bold=True)
+    add_paragraph(doc, "Logged-in sidecars status:", bold=True)
     sidecar_rows = [
         ["ts-admin-portal", "100.124.232.36", "admin-portal.taila1b884.ts.net", "logged"],
         ["ts-identity-bridge", "100.95.15.72", "identity-bridge.taila1b884.ts.net", "logged"],
         ["ts-api-gateway", "100.91.32.123", "api-gateway.taila1b884.ts.net", "logged"],
         ["ts-ml-platform", "100.73.227.21", "ml-platform.taila1b884.ts.net", "logged"],
         ["ts-observability", "100.88.182.108", "observability.taila1b884.ts.net", "logged"],
-        ["ts-grafana", "—", "—", "Logged out (no TS_AUTHKEY_GRAFANA)"],
-        ["ts-intranet", "—", "—", "Logged out (no TS_AUTHKEY_INTRANET)"],
+        ["ts-grafana", "-", "-", "Logged out (no TS_AUTHKEY_GRAFANA)"],
+        ["ts-intranet", "-", "-", "Logged out (no TS_AUTHKEY_INTRANET)"],
     ]
-    add_table(doc, ["Sidecar", "100.x IP", "MagicDNS", "State"], sidecar_rows)
+    add_table(doc, ["Sidecar", "100.x IP", "MagicDNS", "Status"], sidecar_rows)
 
-    add_paragraph(doc, "Result of cross-service HTTP via Tailscale WireGuard:", bold=True)
+    add_paragraph(doc, "Cross-service HTTP via Tailscale WireGuard result:", bold=True)
     add_paragraph(doc,
         "From admin-portal (100.124.232.36) we attempted to reach the other 4 nodes via "
-        "Tailscale overlay. Result: 0 ALLOW, 4 DENY. This is NOT a failure — it is the policy "
+        "the Tailscale overlay. Result: 0 ALLOW, 4 DENY. This is NOT a failure - it is the policy "
         "working as designed. The live rule in the tailnet requires src=autogroup:admin "
-        "(human user), not src=tag:admin-portal (another tag). Therefore admin-portal cannot "
-        "touch identity-bridge/api-gateway/ml-platform/observability via overlay."
+        "(a human user), not src=tag:admin-portal (another tag). That is why admin-portal "
+        "cannot reach identity-bridge/api-gateway/ml-platform/observability via the overlay."
     )
     cross_out = capture_command(
         "cat /home/cmarin78/Documents/Projects/MiniMax/Headscale/tailscale/docs/captures/cross_service_real.txt",
         "cross_service_real",
         CAPTURES_DIR / "cross_service_real.txt",
     )
-    add_terminal_block(doc, cross_out, label="cross_service_real.py (admin-portal → 4 nodes via Tailscale)")
+    add_terminal_block(doc, cross_out, label="cross_service_real.py (admin-portal -> 4 nodes via Tailscale)")
 
     add_paragraph(doc, "Live policy currently applied to the cerberusbyte.com tailnet:", bold=True)
     add_paragraph(doc,
-        "The `tsctl.py policy get` CLI returns 208 lines of HuJSON. The visible rule is: "
-        "`autogroup:admin → tag:identity-bridge:9090` (allow), but there are NO rules "
-        "`tag:admin-portal → tag:identity-bridge:9090`. Therefore cross-traffic from "
+        "The CLI `tsctl.py policy get` returns 208 lines of HuJSON. The visible rule is: "
+        "`autogroup:admin -> tag:identity-bridge:9090` (allow), but there are NO rules "
+        "`tag:admin-portal -> tag:identity-bridge:9090`. That is why the cross-traffic from "
         "admin-portal is denied."
     )
     policy_out = capture_command(
@@ -1142,10 +1144,10 @@ done""", language="bash")
 
     add_paragraph(doc, "Bug found and fixed in heliosctl:", bold=True)
     add_paragraph(doc,
-        "During capture it was discovered that heliosctl referenced `tools/tsctl.py` with "
+        "During the capture we discovered heliosctl referenced `tools/tsctl.py` with "
         "an incorrect relative path (`../../tools/`, two levels up). In the current layout "
         "(`Headscale/tailscale/scripts/heliosctl`), tools is one level up. The fix: "
-        "search in `../tools/`, then `./tools/`, then the legacy `../../tools/`. Same fix "
+        "look in `../tools/`, then `./tools/`, then the legacy `../../tools/`. Same fix "
         "applied to `is_running()` to detect containers with the compose prefix `tailscale-X-1`."
     )
     add_paragraph(doc, "After the fix, validate went from 5/7 to 6/7 (the API check now runs).",
@@ -1155,14 +1157,14 @@ done""", language="bash")
     # ---------- 11a. verify.sh matrix (29 PASS deny + 17 FAIL allow) ----------
     add_heading(doc, "11a. Access matrix executed (verify.sh, 46 cases)", level=1)
     add_paragraph(doc,
-        "The `scripts/verify.sh` script executes 46 allow/deny cases against the 8 personas and 12 services. "
+        "The script `scripts/verify.sh` executes 46 allow/deny cases against the 8 personas and 12 services. "
         "In the current sandbox: 29 PASS + 17 FAIL. The asymmetry is informative:"
     )
     add_paragraph(doc,
-        "Current version of verify.sh (with SKIP handling): runs 46 cases against the 8 personas + 10 services. "
-        "In the current sandbox, the 46 cases result in SKIP because the personas (diego, rafa, sam, etc.) "
-        "are not running — docker network pool exhausted by previous runs. When the sandbox has pool "
-        "available, ALLOW cases would flip to PASS and DENY to PASS (still evidence of "
+        "Current version of verify.sh (with SKIP handling): runs 46 cases against 8 personas + 10 services. "
+        "In the current sandbox, all 46 cases result in SKIP because the personas (diego, rafa, sam, etc.) "
+        "are not running - docker network pool exhausted by previous runs. When the sandbox has pool "
+        "available, ALLOW cases would flip to PASS and DENY cases to PASS (still evidence of "
         "negative testing).",
         italic=True
     )
@@ -1175,21 +1177,21 @@ done""", language="bash")
 
     add_paragraph(doc, "Historical results with the previous policy (autogroup:admin):", bold=True)
     add_paragraph(doc,
-        "When containers were UP (before the pool exhaustion): 29 PASS deny + 17 FAIL allow. "
-        "The 17 FAILs were allow-cases where the policy authorizes but the destination container did not respond "
+        "When containers were UP (before pool exhaustion): 29 PASS deny + 17 FAIL allow. "
+        "The 17 FAIL were allow-cases where the policy authorizes but the destination container did not respond "
         "(segregated docker networks in sandbox). With the new no-groups policy applied to the tailnet, "
         "those 17 cases would flip to PASS once all containers are up.",
         italic=True
     )
     add_paragraph(doc, "Cases that should pass when containers are healthy:", bold=True)
     fail_rows = [
-        ["diego-platform → admin-portal/identity-bridge", "tag:admin-portal + tag:identity-bridge allowed to diego (platform-eng)", "container not running in sandbox"],
-        ["rafa-data → warehouse-db/ml-platform", "tag:warehouse-db + tag:ml-platform allowed to rafa (data-eng)", "container not running in sandbox"],
-        ["sam-sre → observability/eks-gateway:9100/9101", "tag:observability + tag:eks-gateway allowed to sre", "container not running in sandbox"],
-        ["lena-sre-lead → eks-gateway:9100/9102", "exec (9102) exclusive to sre-lead; metrics (9100) shared", "container not running in sandbox"],
-        ["carla-cs → customer-portal/identity-bridge", "tag:customer-portal + tag:identity-bridge allowed to cs", "container not running in sandbox"],
-        ["tomas-sales → api-gateway/customer-portal/ml-platform", "sales-eng role uses api-gateway + ml-platform for demos", "container not running in sandbox"],
-        ["nina-auditor → observability/eks-gateway:9100", "auditor with read-only to metrics", "container not running in sandbox"],
+        ["diego-platform -> admin-portal/identity-bridge", "tag:admin-portal + tag:identity-bridge permitted to diego (platform-eng)", "container not running in sandbox"],
+        ["rafa-data -> warehouse-db/ml-platform", "tag:warehouse-db + tag:ml-platform permitted to rafa (data-eng)", "container not running in sandbox"],
+        ["sam-sre -> observability/eks-gateway:9100/9101", "tag:observability + tag:eks-gateway permitted to sre", "container not running in sandbox"],
+        ["lena-sre-lead -> eks-gateway:9100/9102", "exec (9102) exclusive to sre-lead; metrics (9100) shared", "container not running in sandbox"],
+        ["carla-cs -> customer-portal/identity-bridge", "tag:customer-portal + tag:identity-bridge permitted to cs", "container not running in sandbox"],
+        ["tomas-sales -> api-gateway/customer-portal/ml-platform", "sales-eng role uses api-gateway + ml-platform for demos", "container not running in sandbox"],
+        ["nina-auditor -> observability/eks-gateway:9100", "auditor with read-only to metrics", "container not running in sandbox"],
     ]
     add_table(doc, ["Allow case", "Policy says", "Why SKIP in sandbox"], fail_rows)
     doc.add_page_break()
@@ -1197,10 +1199,10 @@ done""", language="bash")
     # ---------- 11b. Network isolation (live evidence) ----------
     add_heading(doc, "11b. Network isolation: evidence of segregated docker networks", level=1)
     add_paragraph(doc,
-        "The POC forces per-network isolation between personas and services using separate docker networks "
+        "The POC forces network isolation between personas and services using separate docker networks "
         "(one per container). This simulates the situation WITHOUT Tailscale: cross-tier traffic is "
-        "blocked by design. Tailscale comes to break this isolation via the tailnet overlay, "
-        "afterwards applying tag-based ACLs as a filter on top."
+        "blocked by design. Tailscale would break this isolation via the tailnet overlay, "
+        "then apply tag-based ACLs as a filter on top."
     )
     isolation_path = CAPTURES_DIR / "isolation_diagram.png"
     make_isolation_diagram(isolation_path)
@@ -1214,32 +1216,32 @@ done""", language="bash")
     )
     add_terminal_block(doc, isolation_out, label="isolation_test.sh (5 checks against running services)")
 
-    add_paragraph(doc, "Services actually accessible in this environment:", bold=True)
+    add_paragraph(doc, "Services effectively accessible in this environment:", bold=True)
     add_paragraph(doc,
-        "From the previous run the following containers remained operational (legacy schema, "
-        "exposed on their own bridges). They serve as a live reference of the access patterns "
+        "From the previous run, the following containers remain operational (legacy schema, "
+        "exposed on their own bridges). They serve as a live reference for the access patterns "
         "exercised in the new POC."
     )
     live_headers = ["Container", "Image", "Uptime", "Function"]
     live_rows = [
-        ["admin-panel-1", "tailscale-admin-panel", "46 h", "Flask :8080 — healthcheck passes"],
+        ["admin-panel-1", "tailscale-admin-panel", "46 h", "Flask :8080 - healthcheck passes"],
         ["rds-sim-1", "postgres:16", "43 h", "Postgres with user `axial` / DB `axial_poc`"],
-        ["migration-bridge-1", "tailscale-migration-bridge", "47 h", "boto3 + Flask — fake Secrets Manager"],
-        ["eks-workload-1", "tailscale-eks-workload", "43 h", "Python app over kind-like cluster"],
+        ["migration-bridge-1", "tailscale-migration-bridge", "47 h", "boto3 + Flask - fake Secrets Manager"],
+        ["eks-workload-1", "tailscale-eks-workload", "43 h", "Python app over a kind-like cluster"],
         ["internal-db-1", "postgres:16", "2 d", "Internal DB (auth, sessions)"],
-        ["eng-operator-1", "nicolaka/netshoot", "43 h", "eng persona: shell with network tools"],
-        ["eng-viewer-1", "nicolaka/netshoot", "43 h", "viewer persona: read-only"],
-        ["client-eng-1", "nicolaka/netshoot", "2 d", "client persona"],
-        ["untrusted-1", "nicolaka/netshoot", "2 d", "external untrusted persona"],
+        ["eng-operator-1", "nicolaka/netshoot", "43 h", "Eng persona: shell with network tools"],
+        ["eng-viewer-1", "nicolaka/netshoot", "43 h", "Viewer persona: read-only"],
+        ["client-eng-1", "nicolaka/netshoot", "2 d", "Customer persona"],
+        ["untrusted-1", "nicolaka/netshoot", "2 d", "Untrusted external persona"],
     ]
     add_table(doc, live_headers, live_rows)
 
     add_paragraph(doc, "Build evidence (new schema):", bold=True)
     add_paragraph(doc,
         "When running `heliosctl start services` in this sandbox, the 10 images of the new schema "
-        "build correctly and compose tries to create the networks. Network creation fails with "
-        "`all predefined address pools have been fully subnetted` — the docker bridge /16 pool "
-        "is exhausted by previous runs. This is a sandbox limitation, NOT a POC limitation."
+        "build correctly and compose attempts to create the networks. Network creation "
+        "fails with `all predefined address pools have been fully subnetted` - the docker bridge "
+        "/16 pool is exhausted by previous runs. This is a sandbox limitation, NOT the POC's."
     )
     add_terminal_block(doc, [
         "Network tailscale_net-customer-portal  Creating",
@@ -1247,49 +1249,49 @@ done""", language="bash")
         "failed to create network tailscale_net-customer-portal: Error response from daemon:",
         "  all predefined address pools have been fully subnetted",
         "...",
-        "tailscale-identity-bridge  Built    ✓",
-        "tailscale-customer-portal  Built    ✓",
-        "tailscale-api-gateway      Built    ✓",
-        "tailscale-ml-platform      Built    ✓",
-        "tailscale-grafana          Built    ✓",
-        "tailscale-observability    Built    ✓",
-        "tailscale-warehouse-job    Built    ✓",
-        "tailscale-eks-gateway      Built    ✓",
-        "tailscale-admin-portal     Built    ✓",
-        "tailscale-intranet         Built    ✓",
-    ], label="docker compose up (10/10 images BUILT, 0/10 networks created — pool exhausted)")
+        "tailscale-identity-bridge  Built    OK",
+        "tailscale-customer-portal  Built    OK",
+        "tailscale-api-gateway      Built    OK",
+        "tailscale-ml-platform      Built    OK",
+        "tailscale-grafana          Built    OK",
+        "tailscale-observability    Built    OK",
+        "tailscale-warehouse-job    Built    OK",
+        "tailscale-eks-gateway      Built    OK",
+        "tailscale-admin-portal     Built    OK",
+        "tailscale-intranet         Built    OK",
+    ], label="docker compose up (10/10 images BUILT, 0/10 networks created - pool exhausted)")
 
     add_paragraph(doc, "Mitigation documented in POC_OPERATIONS.md:", italic=True)
     add_paragraph(doc,
         "1. `docker network prune -f` frees orphan networks and returns ~5-10 subnets. "
         "2. Edit `/etc/docker/daemon.json` and add custom /20 pools to extend to >1000 networks. "
-        "3. In ephemeral CI/CD, recreate the daemon with `--default-address-pool` with base 10.0.0.0/8."
+        "3. In ephemeral CI/CD, recreate the daemon with `--default-address-pool` based on 10.0.0.0/8."
     )
     doc.add_page_break()
 
     # ---------- 12. Troubleshooting ----------
     add_heading(doc, "12. Troubleshooting", level=1)
 
-    tr_headers = ["Symptom", "Cause", "Solution"]
+    tr_headers = ["Symptom", "Cause", "Fix"]
     tr_rows = [
         ["all predefined address pools have been fully subnetted",
-         "Docker ran out of available /16 for bridge networks",
-         "docker network prune -f; or increase pool in /etc/docker/daemon.json"],
+         "Docker ran out of /16 available for bridge networks",
+         "docker network prune -f; or increase the pool in /etc/docker/daemon.json"],
         ["groups not found when applying policy",
-         "policy references groups that don't exist in the tailnet",
+         "policy references groups that do not exist in the tailnet",
          "Configure SSO first; or use policy-poc-no-groups.hujson"],
-        ["permission denied when doing docker exec",
+        ["permission denied when running docker exec",
          "user is not in the docker group",
          "sudo usermod -aG docker $USER; newgrp docker"],
         ["TS_AUTHKEY has been used",
-         "Auth keys are one-use or already used",
-         "Generate new auth key via tsctl.py authkey create"],
+         "Auth keys are one-use or were already used",
+         "Generate a new auth key via tsctl.py authkey create"],
         ["tailscaled: not logged in",
          "Sidecar cannot reach controlplane.tailscale.com",
-         "Check the container's DNS; use ping/curl inside the sidecar"],
+         "Check the container DNS; use ping/curl inside the sidecar"],
         ["ngrok: tunnel URL changes on every restart",
-         "Free plan without custom domain",
-         "ngrok paid ($8/mo) with reserved domain, or cloudflared with your own domain"],
+         "Free plan with no custom domain",
+         "ngrok paid ($8/month) with a reserved domain, or cloudflared with your own domain"],
     ]
     add_table(doc, tr_headers, tr_rows)
     doc.add_page_break()
@@ -1300,49 +1302,49 @@ done""", language="bash")
     rm_rows = [
         ["Level 1 (this POC)", "Tag-based ACLs, simulated IdP, ngrok, kind EKS, 10 services", "5-10 hours"],
         ["Level 2 (staging)", "Replace mocks with real services, Google Workspace SSO, MDM rollout", "1-2 sprints"],
-        ["Level 3 (production)", "HA, multi-region, audit logging in SIEM, Prometheus alerts, on-call", "1 quarter"],
-        ["Level 4 (compliance)", "Headscale self-hosted if compliance requires on-prem", "depends on trigger"],
+        ["Level 3 (production)", "HA, multi-region, audit logging to SIEM, Prometheus alerts, on-call", "1 quarter"],
+        ["Level 4 (compliance)", "Self-hosted Headscale if compliance requires on-prem", "per trigger"],
     ]
     add_table(doc, rm_headers, rm_rows)
 
     add_paragraph(doc, "Triggers to re-evaluate Headscale:", bold=True)
     triggers = [
-        "SaaS cost > 30% of infra budget → compare TCO",
+        "SaaS cost > 30% of infra budget -> compare TCO",
         "Compliance requires on-prem control plane (SOC 2, HIPAA)",
-        "SRE team large enough to operate the control plane",
-        "Need a custom feature that Tailscale Inc. refuses to implement",
+        "SRE team is large enough to operate the control plane",
+        "Need for a custom feature that Tailscale Inc. refuses to implement",
     ]
     for t in triggers:
         doc.add_paragraph(t, style="List Bullet")
     doc.add_page_break()
 
     # ---------- 14. Comparison ----------
-    add_heading(doc, "14. Tailscale SaaS vs Headscale comparison", level=1)
-    add_paragraph(doc, "The POC includes both paths so you can compare directly.")
+    add_heading(doc, "14. Comparison: Tailscale SaaS vs Headscale", level=1)
+    add_paragraph(doc, "The POC includes both paths so they can be compared directly.")
 
-    cmp_headers = ["Feature", "Tailscale SaaS", "Headscale self-hosted"]
+    cmp_headers = ["Feature", "Tailscale SaaS", "Self-hosted Headscale"]
     cmp_rows = [
         ["Initial setup", "2 hours", "1 day"],
         ["Google Workspace SSO", "Native (Business+)", "Custom (any OIDC)"],
         ["SCIM groups sync", "Native (Business+)", "Custom script"],
-        ["Multi-tailnet", "❌", "✅"],
-        ["Ongoing operation", "SaaS handles it", "You operate it (HA, backup, updates)"],
+        ["Multi-tailnet", "no", "yes"],
+        ["Ongoing operations", "SaaS handles it", "You operate it (HA, backup, updates)"],
         ["5-year cost (50 nodes)", "$30-50K/year (SaaS)", "~$50-80K/year SRE time"],
-        ["Portable policy", "✅ same HuJSON", "✅ same HuJSON"],
-        ["Migration between vendors", "N/A", "Take down SaaS, stand up Headscale"],
+        ["Portable policy", "yes - same HuJSON", "yes - same HuJSON"],
+        ["Migration between vendors", "N/A", "Drop SaaS, stand up Headscale"],
     ]
     add_table(doc, cmp_headers, cmp_rows)
 
     add_paragraph(doc, "Recommendation:", bold=True)
     add_paragraph(doc,
-        "For Helios today: Tailscale SaaS (team decision set-2026). "
-        "Migrate to Headscale only when compliance/finance/CISO requires it. "
-        "The parallel POC already exists (`/headscale/`) with the same structure — migration is a vendor swap, not a rewrite."
+        "For Helios today: Tailscale SaaS (team decision, Sep-2026). "
+        "Migrate to Headscale only when compliance/finance/CISO require it. "
+        "The parallel POC already exists (`/headscale/`) with the same structure - migration is a vendor swap, not a rewrite."
     )
 
-    add_paragraph(doc, "—", italic=True)
+    add_paragraph(doc, "-", italic=True)
     add_paragraph(doc,
-        "Generated automatically by scripts/generate_docs.py. "
+        "Automatically generated by scripts/generate_docs.py. "
         "To regenerate: cd tailscale && python3 scripts/generate_docs.py",
         italic=True, size=8, color=RGBColor(0x99, 0x99, 0x99),
     )
@@ -1350,7 +1352,7 @@ done""", language="bash")
     # ---------- Save ----------
     doc.save(str(out_path))
     size_kb = Path(out_path).stat().st_size / 1024
-    print(f"✓ {out_path} generated ({size_kb:.1f} KB)")
+    print(f"✓ {out_path} generado ({size_kb:.1f} KB)")
 
 
 # ---------- Main ----------
