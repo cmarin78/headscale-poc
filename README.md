@@ -1,161 +1,321 @@
-# Helios POC — Headscale (self-hosted variant)
+# Helios — Corporate tailnet POC with simulated IdP
 
-Parallel POC to the Tailscale SaaS one, using **Headscale** as a self-hosted control plane instead of Tailscale Inc.'s SaaS.
+**POC that validates a realistic access management pattern for a mid-sized B2B SaaS entity**, using Tailscale as the network substrate and a simulated IdP (Google Workspace-style) as the identity source for employees.
 
-**Simulated company:** Helios (B2B SaaS for AP automation aimed at fintechs). **IdP:** Google Workspace (via OIDC in Headscale, or Authentik as a local sim). **Services:** 10. **Personas:** 9.
-
-> **Why this POC exists:** the team wants to compare **side by side** the SaaS option vs self-hosted. The HuJSON policy is portable — the same access-control logic works in both. What changes is the **control-plane infrastructure**: in this POC, Headscale runs as a local Docker container; in prod, on a Helios K8s cluster.
+> **Why this exists:** typical Tailscale POCs teach the "5 nodes with tags" pattern. This one goes further: it models a **~50-employee company** with 5 functional teams, 9 services, two environments (dev/staging), DataWarehouse, ML serving, customer portal, external auditor, and engineers who log in with corporate SSO. This is the distance between "demo" and "produces a credible RFC".
 
 ---
 
-## Differences with `tailscale/` (SaaS POC)
+## 1. What Helios is (in this POC)
 
-| Aspect | `tailscale/` (SaaS) | `headscale/` (this one, self-hosted) |
-|---|---|---|
-| Control plane | Tailscale Inc. (https://controlplane.tailscale.com) | Local Headscale (this container) |
-| MagicDNS suffix | `.ts.net` | `.headscale.ts.net` or custom |
-| Authkey generation | Tailscale API or admin console | `headscale preauthkeys create` (via `hsctl`) |
-| DNS / DERP | Tailscale DERP servers | Default + optional custom |
-| OIDC | Yes (with SSO providers) | Yes (more control over flows) |
-| SCIM groups | Yes (Google Workspace native) | NOT native (requires custom sync) |
-| License | Tailscale pricing | Free (operate it yourself) |
-| Operation | SaaS handles HA, upgrades | You operate HA, upgrades, backup |
+**Helios** is a fictitious company offering a B2B SaaS for accounts-payable automation aimed at fintechs. It has:
 
-**What is identical:**
-- `acl/policy.hujson` — the same policy works in both (standard HuJSON).
-- Apps in `apps/` — same ones (same Dockerfiles, same code).
-- Conceptual personas and groups — same roles, different identity sources.
-- Verification matrix in `scripts/verify.sh` — same cases, same expected results.
+| Characteristic | Value in this POC |
+|---|---|
+| Size | ~50 employees, distributed across 3 regions (assumed US for the POC) |
+| Teams | Platform Eng, Data Eng, SRE, Customer Success, Sales Eng, Security |
+| Internal services | 7 (see §3) |
+| External services | 1 (customer portal exposed via Funnel) |
+| Environments | dev + staging (prod is out-of-scope for the POC) |
+| Compliance | SOC 2 in progress; needs fine-grained access auditing |
+| Corporate identity | sim. Google Workspace (this POC); real Google Workspace in prod |
 
 ---
 
-## How to run it
+## 2. Topology
 
-### Prereq
+```
+                              ┌─────────────────────────────────┐
+                              │  Identity Provider (simulated)   │
+                              │  Authentik  (Google Workspace    │
+                              │  style) — port 9000/9443        │
+                              └────────────┬────────────────────┘
+                                           │ OIDC discovery
+                                           │ (Tailscale/Headscale consumes it)
+                                           ▼
+                              ┌─────────────────────────────────┐
+                              │  Tailscale control plane        │
+                              │  (SaaS in this POC)             │
+                              │  policy.hujson with group:...   │
+                              └────────────┬────────────────────┘
+                                           │
+       ┌─────────────┬─────────────┬──────┴───────┬──────────────┬──────────────┐
+       ▼             ▼             ▼              ▼              ▼              ▼
+  ┌─────────┐  ┌──────────┐  ┌──────────┐   ┌──────────┐  ┌──────────┐  ┌──────────┐
+  │ admin-  │  │identity- │  │ api-     │   │ customer │  │  ml-     │  │ observ-  │
+  │ portal  │  │bridge    │  │ gateway  │   │  portal  │  │ platform │  │ ability  │
+  └─────────┘  └──────────┘  └──────────┘   └──────────┘  └──────────┘  └──────────┘
+       │             │             │              │              │              │
+       │             │             │              │              │              │
+       ▼             ▼             ▼              ▼              ▼              ▼
+  ┌──────────────────────────────────────────────────────────────────────────────┐
+  │  Postgres primary (data/init)              │  Postgres warehouse (data/init) │
+  └──────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Key points of the topology:**
+
+- Each service runs with a `tailscale/tailscale` sidecar + `network_mode: service:*` (same trick as the original POC, avoids Compose's embedded DNS).
+- Each service has a **different tag** (the network namespace is not shared).
+- Employees are **nodes in the tailnet with Google identity** (or, in this POC, Authentik) — their `group:` is evaluated in the policy.
+- **MiniStack** simulates AWS Secrets Manager + RDS for the secrets patterns.
+- **Terraform** seeds the secrets once, before the first `up`.
+
+---
+
+## 3. POC Services (tags)
+
+| Tag | Service | Function | Port |
+|---|---|---|---|
+| `tag:admin-portal` | Flask app | Internal admin panel (Helios ops + support) | 8080 |
+| `tag:identity-bridge` | Flask app | Generic SSO bridge (similar to the migration-bridge, agnostic of upstream IdP) | 9090 |
+| `tag:api-gateway` | Flask app | Public gateway for B2B clients (Helios clients consume the API) | 8443 |
+| `tag:customer-portal` | Flask app | External portal for Helios clients (Tailscale Funnel in prod) | 9443 |
+| `tag:primary-db` | Postgres | Main transactional DB (customers, invoices, users) | 5432 |
+| `tag:warehouse-db` | Postgres | Data warehouse (analytics, ML training) | 5432 |
+| `tag:ml-platform` | Flask app | Serves ML models (fraud scoring, categorization) | 8501 |
+| `tag:warehouse-job` | Python job | Batch job that moves data from primary -> warehouse | n/a |
+| `tag:observability` | Flask app | Metrics (Prometheus-style) + logs + access log | 9100 |
+| `tag:eks-gateway` | Python app | Simulates 3 EKS resources (metrics/logs/exec) on different ports | 9100/9101/9102 |
+| `tag:grafana` | Grafana 11 | Pre-loaded with Prometheus datasource + Helios dashboard | 3000 |
+| `tag:intranet` | Flask app | Internal employee portal (role-gated sections) | 7000 |
+
+**12 tags, 10 service containers + 2 DBs + 1 EKS cluster (3 resources) + 1 Grafana + 1 intranet portal, all isolated networks.** This is the attack-surface matrix that the policy has to govern.
+
+---
+
+## 4. Personas
+
+The POC simulates 9 personas (Helios employees) who log in to the tailnet via SSO. See `docs/personas.md` for details.
+
+| Persona | Email (simulated) | Google Group | What they can do |
+|---|---|---|---|
+| Maya (admin) | `maya.admin@helios.example` | `group:helios-admin` | Everything (including SSH) |
+| Diego (platform eng) | `diego.platform@helios.example` | `group:platform-eng` | admin-portal, identity-bridge, observability, SSH to those 3 |
+| Rafa (data eng) | `rafa.data@helios.example` | `group:data-eng` | warehouse-db, ml-platform (read), warehouse-job (run) |
+| Sam (SRE) | `sam.sre@helios.example` | `group:sre` | observability, eks-gateway (9100+9101 read), SSH to eks-gateway |
+| Lena (SRE lead) | `lena.sre@helios.example` | `group:sre-lead` | Everything Sam has + eks-gateway:9102 (exec) |
+| Carla (customer success) | `carla.cs@helios.example` | `group:customer-success` | customer-portal (read), api-gateway (read), primary-db (read-only via SQL) |
+| Tomás (sales eng) | `tomas.sales@helios.example` | `group:sales-eng` | customer-portal (demo data), ml-platform (predict) |
+| Nina (auditor) | `nina.auditor@helios.example` | `group:auditors` | observability (read), ml-platform (read) — no exec, no direct DB |
+| Eve (simulated external attacker) | `eve.attacker@external.example` | `group:untrusted` | **Nothing** — must be denied everywhere |
+
+**Key distinction:** engineers log in with SSO (`group:...`); **services** use preauth keys with tags. The policy treats both as valid srcs but routes them differently.
+
+---
+
+## 5. POC Components
+
+```
+tailscale/
+├── README.md                       ← this file
+├── ARCHITECTURE.md                 ← detailed design (layers, MapRequest flow, sync points)
+├── MATURITY.md                     ← what it demonstrates, what it doesn't, path to production
+├── docker-compose.yml              ← service layer
+├── docker-compose.identity.yml     ← identity layer (Authentik)
+├── docker-compose.ministack.yml    ← AWS simulator
+├── .env.example
+├── acl/
+│   ├── policy.hujson               ← main policy (10 tags, 6 groups, SSH, services)
+│   └── services.json               ← advertised services (svc:warehouse-db, svc:ml-platform)
+├── identity/
+│   ├── docker-compose.yml          ← (reference, same as docker-compose.identity.yml)
+│   ├── bootstrap/
+│   │   ├── users.json              ← 9 personas with their groups
+│   │   ├── groups.json             ← 6 functional groups
+│   │   ├── tailscale-oidc.json     ← OIDC provider configured in Authentik
+│   │   ├── seed.py                 ← bootstrap script (Authentik API)
+│   │   └── requirements.txt
+│   └── README.md                   ← how the simulated IdP operates
+├── apps/
+│   ├── admin-portal/               ← Flask app + Dockerfile
+│   ├── identity-bridge/            ← Flask app + Dockerfile (with boto3 + psycopg)
+│   ├── api-gateway/                ← Flask app + Dockerfile
+│   ├── customer-portal/            ← Flask app + Dockerfile
+│   ├── ml-platform/                ← Flask app + Dockerfile (mock model)
+│   ├── warehouse-job/              ← Python job (one-shot script + Dockerfile)
+│   ├── observability/              ← Flask app + Dockerfile (simulated metrics)
+│   ├── grafana/                    ← Real Grafana 11 with provisioning + dashboards/helios.json
+│   └── intranet/                   ← Flask app, role-gated sections
+├── data/
+│   └── init/                       ← bootstrap SQL for primary-db and warehouse-db
+├── eks/                            ← kind + RBAC (viewer/editor/admin)
+├── ngrok/                          ← tunnel config (ngrok-free.dev)
+├── router/                         ← Flask proxy (WebFinger + Authentik)
+├── terraform/                      ← seeds secrets in MiniStack
+├── ministack/                      ← MiniStack config
+├── scripts/
+│   ├── bootstrap.sh                ← full sequence: identity → secrets → tailnet
+│   ├── verify.sh                   ← allow/deny matrix (46 cases)
+│   ├── teardown.sh                 ← cleanup
+│   ├── demo.sh                     ← 7-step guided walkthrough (--fast supported)
+│   ├── heliosctl                   ← lifecycle CLI (start/stop/status/validate/add/remove)
+│   ├── generate_docs.py            ← regenerates docs/Helios-POC-Documentation.docx
+│   └── refresh_captures.sh         ← re-runs the lab end-to-end and refreshes all captures
+├── docs/
+│   ├── personas.md                 ← detail of the 9 personas
+│   ├── decision-log.md             ← rationale for each piece
+│   ├── Helios-POC-Documentation.docx   ← human-readable deliverable (auto-generated)
+│   ├── captures/                   ← *.txt + *.json + *.png from real runs
+│   └── captures/screenshots/       ← chrome headless screenshots of web UIs
+└── diagrams/                       ← matplotlib-generated figures
+```
+
+---
+
+## 6. How to run it
+
+### Prerequisites
 
 - Docker + Compose v2
-- Headscale runs as a container; no Tailscale account required
-- (Optional) Terraform ≥ 1.5 for MiniStack
+- Tailscale account (free tier is enough for this POC)
+- Terraform ≥ 1.5 (for the MiniStack part)
+- jq, curl, python3
 
-### Sequence
+### Sequence (with Google Workspace as IdP)
 
 ```bash
-# 1. Environment variables
-cd headscale/
+# 1. Authkeys: generate 18 reusable auth keys (12 service + 6 persona) in the Tailscale admin console
+#    https://login.tailscale.com/admin/settings/keys
+#    Paste them in .env as TS_AUTHKEY_<TAG>
+
 cp .env.example .env
-$EDITOR .env  # paste TS_AUTHKEY_* (generated in step 2)
+$EDITOR .env
 
-# 2. Bootstrap: create users and auth keys in Headscale
-docker compose up -d headscale   # bring up only the control plane first
-sleep 10  # wait for Headscale to be ready
-cd ../tools/
-python3 hsctl.py user create helios-admin
-python3 hsctl.py authkey create --user helios-admin --tag tag:admin-portal --reusable --days 30
-# (repeat for each tag and persona; or use the bootstrap script in headscale/scripts/bootstrap.sh)
+# 2. Configure Google Workspace as IdP (in production)
+#    a. Tailscale admin console -> Settings -> Identity Providers -> Connect Google Workspace
+#    b. Select the Google groups to sync to Tailscale via SCIM
+#    c. policy.hujson references those groups as src
 
-# 3. Apply policy
-python3 hsctl.py policy set ../headscale/acl/policy.hujson
+# 3. (Optional) Start MiniStack to simulate AWS Secrets Manager locally
+docker compose -f docker-compose.ministack.yml up -d
 
-# 4. Back to headscale/ and bring everything up
-cd ../headscale/
-docker compose up -d --build
+# 4. Seed secrets in MiniStack via Terraform
+cd terraform && terraform init && terraform apply -auto-approve && cd ..
 
-# 5. Verify
+# 5. Start the full stack via the lifecycle CLI
+./scripts/heliosctl start all
+
+# 6. Run the validation check (7 quick checks)
+./scripts/heliosctl validate
+
+# 7. Apply the policy in the Tailscale admin console
+#    Paste the contents of acl/policy.hujson into Access Controls
+
+# 8. Run the verification matrix (46 cases)
 ./scripts/verify.sh
+
+# 9. Take a guided tour
+./scripts/demo.sh --fast
 ```
+
+### Idempotent lab refresh (everything to docs/captures/)
+
+The repository ships a one-command lab refresh that re-runs the whole POC and
+captures every output (terminal transcripts, JSON, PNG diagrams and chrome
+headless screenshots of each web UI):
+
+```bash
+./scripts/refresh_captures.sh
+```
+
+What it does:
+
+- runs `heliosctl validate`, `heliosctl status`, and `heliosctl validate` again with `TAILSCALE_API_KEY`
+- probes each Flask service via `docker exec <container> python3 urllib /healthz` (real responses, not mocks)
+- takes chrome headless screenshots of each reachable web UI through socat forwards (host:29010-29018 -> sidecar IPs)
+- runs `isolation_test.sh`, `cross_service_real.py`, `demo.sh --fast`, `verify.sh` and saves stripped-of-ANSI transcripts
+- captures `tailscale status` from every sidecar and the live policy via tsctl
+- leaves everything under `docs/captures/` so `generate_docs.py` can re-render the .docx with section 11d populated
+
+After running it, regenerate the .docx to embed the fresh evidence:
+
+```bash
+python3 scripts/generate_docs.py
+# -> docs/Helios-POC-Documentation.docx (now with the latest lab run as section 11d)
+```
+
+### Alternative sequence (with Authentik as Google Workspace simulator)
+
+If you want to validate the IdP pattern without depending on a real Google Workspace, you can use Authentik (the original setup) — useful when the POC runs on a laptop without access to Helios's real Google Workspace:
+
+```bash
+docker compose -f docker-compose.identity.yml up -d
+docker compose -f docker-compose.ministack.yml up -d
+docker compose -f docker-compose.identity.yml run --rm id-bootstrap  # creates users/groups
+# Then configure Tailscale admin console → SSO → use Authentik as the issuer
+```
+
+**Key differences: real Google Workspace vs simulated Authentik**
+- **SCIM sync**: Google Workspace → automatic; Authentik → manual (re-run `seed.py`)
+- **MFA**: Google Workspace → configurable via Google admin; Authentik → TOTP/WebAuthn
+- **Admin UI**: Google Workspace → `admin.google.com`; Authentik → `localhost:9000`
+- **Everything else (OIDC, groups in policy, etc.) is identical**
 
 ### Cleanup
 
 ```bash
+./scripts/teardown.sh
 docker compose down -v
 docker compose -f docker-compose.identity.yml down -v
-docker compose -f ministack/docker-compose.ministack.yml down -v
+docker compose -f docker-compose.ministack.yml down -v
 ```
 
 ---
 
-## Structure
+## 7. What this POC **proves** vs the original POC
 
-```
-headscale/
-├── README.md                       ← this file
-├── docker-compose.yml              ← services + headscale + identity + ministack
-├── headscale-config.yaml           ← control plane configuration
-├── .env.example
-├── acl/
-│   ├── policy.hujson               ← SAME policy as tailscale/ (portable)
-│   └── README.md
-├── apps/                           ← same apps as tailscale/apps/
-├── data/init/                      ← same SQL files
-├── identity/                       ← same Authentik (optional, you can use Google directly)
-├── scripts/
-│   ├── verify.sh                   ← SAME verification matrix as tailscale/scripts/verify.sh
-│   ├── bootstrap.sh                ← full bootstrap script
-│   └── hsctl                       ← (in /tools/) CLI for Headscale
-├── terraform/                      ← same secrets
-├── ministack/                      ← same AWS simulator
-└── docs/
-    ├── comparison.md               ← Tailscale SaaS vs Headscale side by side
-    └── personas.md
-```
+| Question | Original POC (previous POC) | Helios (this one) |
+|---|---|---|
+| Do tag-based ACLs work? | ✅ 5 tags | ✅ 10 tags, more complex scenarios |
+| Do Tailscale Services (svc:X) work? | ✅ `svc:rds-sim` | ✅ `svc:warehouse-db`, `svc:ml-platform` (multiple) |
+| Does SSH bastion-less work? | ✅ basic | ✅ with group check + "DMZ with privileges" logic |
+| Does the `Tailscale-User-*` header flow? | ✅ basic | ✅ + comparison with/without |
+| Does it work with IdP SSO? | ❌ not tested | ✅ Authentik + OIDC + groups |
+| Granular by IdP group? | ❌ | ✅ `group:platform-eng@helios.example` |
+| dev/staging differentiation? | ❌ | ✅ two separate environments |
+| Does it work with multiple DBs? | ❌ | ✅ primary-db + warehouse-db, different groups |
+| Access auditing? | partial | ✅ `tag:observability` with detailed metrics |
+| Customer portal exposed via Funnel? | ❌ | ✅ modeled (not exposed publicly) |
+| Realistic multi-persona? | ❌ 2 engineers | ✅ 9 personas, 6 groups |
 
 ---
 
-## What this POC demonstrates vs `tailscale/`
+## 8. What it does **NOT** prove (honestly)
 
-| Question | Answer |
+| Gap | When it matters |
 |---|---|
-| Does Headscale handle the same services? | ✅ Same containers, same flow |
-| Is the policy portable? | ✅ Yes, copy-paste works |
-| Does Headscale have MagicDNS? | ✅ Yes, with `dns.magic_dns: true` in config |
-| Does Headscale have DERP? | ✅ Default (Tailscale) + optional custom |
-| Does it work with OIDC? | ✅ `cfg.OIDC.Issuer`, supports Google Workspace |
-| SSH bastion-less? | ✅ Yes, same `ssh` section in policy |
-| AutoApprovers? | ✅ Yes |
-| Grants? | ✅ Yes |
-| Multi-user (multiple namespaces)? | ✅ Each user has its own nodes |
-| API for automation? | ✅ gRPC + REST (with config), or `headscale` CLI |
-| OAuth clients (like the SaaS)? | ⚠️ Limited — supported but with fewer features |
-| SCIM sync from Google Workspace? | ❌ Not native — needs custom sync (cron + API) |
+| MDM rollout (Apple Business Manager, Mosyle, Intune) | When Helios decides employees receive pre-configured laptops |
+| Scaling to +100 nodes | The Tailscale/Headscale mapper is measured for +5K nodes/tailnet, but the policy becomes hard to maintain by hand beyond ~50 nodes |
+| HA subnet router failover | Helios is multi-tenant SaaS; if it goes prod, subnet routers must be HA |
+| Policy as code (PR review of `policy.hujson`) | The POC applies the policy via the admin console; in prod it should live in git with CI |
+| Integration with real Vault (not MiniStack) | When Helios touches real AWS; the pattern is the same, the addresses change |
+| Automatic secrets rotation | The POC reads secrets once and caches; in prod they rotate every N days |
+| Custom claim enrichment (Google claims → ACL attrs) | Tailscale supports it, but requires custom OIDC mapping |
 
 ---
 
-## Headscale-specific limitations vs SaaS
+## 9. Maturity roadmap
 
-| Limitation | Impact on Helios |
-|---|---|
-| SCIM not native | For automatic sync from Google → Headscale groups, you need to write a script (Python + Google Admin SDK + Headscale API). See `docs/scim-sync.md` when implemented. |
-| OAuth client (login via Google) | Exists but less polished than the SaaS. Google integration may require workarounds. |
-| MagicDNS suffix | Default is `headscale.ts.net` (a bit odd). Helios could use `helio.ts.net` by configuring `dns.base_domain`. |
-| HA | You need to run 2+ instances with a shared Postgres and a load balancer in front. SaaS gives that for free. |
-| Update cadence | Headscale releases frequently; requires manual updates. |
-| State backup | DB (Postgres or SQLite) is the source of truth — backup is mandatory. |
+See `MATURITY.md`. Short version:
+
+1. This POC: pattern validated locally, ~50 nodes in mind.
+2. Real Helios staging: bring up the same services in AWS staging, use real Google Workspace (not Authentik), add MDM.
+3. Production: define SLOs, alerting, on-call, incident runbook, disaster-recovery tests.
+4. Headscale evaluation: if compliance asks for an on-prem control plane, stand up Headscale as drop-in (the same `policy.hujson` should work; see `decision-log.md`).
 
 ---
 
-## What it is good for (and what it isn't)
+## 10. Latest lab evidence
 
-**Good for:**
-- Validating that the access pattern works specifically with Headscale.
-- Deciding between SaaS and self-hosted with concrete evidence.
-- Learning how to operate Headscale (release cycle, monitoring, debugging).
-- Having a realistic staging environment without spending on Tailscale.
+The lab is refreshed on demand via `./scripts/refresh_captures.sh`. The current
+state of the sandbox is captured in:
 
-**Not good for:**
-- Evaluating performance at hundreds-of-nodes scale (POC has 20).
-- Validating disaster recovery (POC is single-instance).
-- Replacing the vendor decision in production — that requires a larger POC (weeks, not hours).
-
----
-
-## Recommended next step
-
-After running this POC and the `tailscale/` one side by side:
-
-1. Compare admin ergonomics (which is easier?).
-2. Compare latency (how long does a change take to propagate?).
-3. Compare error messages (are they clear?).
-4. Compare Google Workspace integration (how much extra work does Headscale require?).
-5. Try a real case: add a new service, evict a device, rotate an auth key.
-
-The results of these 5 points go into `docs/comparison.md` which documents the final decision.
+- `docs/captures/health_probes.txt` - per-service HTTP 200s from `docker exec`
+- `docs/captures/tailscale_status.txt` - every sidecar's 100.x IP + MagicDNS name
+- `docs/captures/live_policy_full.txt` - 206 lines of HuJSON applied to the tailnet
+- `docs/captures/cross_service_real.txt` - 100.x overlay HTTP from admin-portal to 4 peers
+- `docs/captures/isolation_test_output.txt` - 5 checks proving segregated docker networks
+- `docs/captures/demo_run.log`, `verify_run.log` - last runs of the demo and matrix
+- `docs/captures/screenshots/*.png` - chrome headless captures of every reachable web UI
+- `docs/Helios-POC-Documentation.docx` section 11d ("Real lab run") - everything above, embedded

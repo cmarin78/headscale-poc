@@ -2,12 +2,12 @@
 
 This is the **complete work list** to take the POC from "basic functional POC" (what we have today) to "realistic POC for stakeholder demo" (what you want).
 
-## Current state
+## Current status
 
-| Component | State | Notes |
+| Component | Status | Notes |
 |---|---|---|
 | `tailscale/` base POC | ✅ complete | 10 services + 8 personas + ACL + verify |
-| HuJSON policy with 10 tags | ✅ complete | 4 variants (no-groups, original, v2, v3) |
+| HuJSON Policy with 10 tags | ✅ complete | 4 variants (no-groups, original, v2, v3) |
 | Auth keys (18) generated via tsctl | ✅ complete | Pasted in `.env` |
 | `heliosctl` lifecycle CLI | ✅ complete | start/stop/restart/destroy/clean + add/remove + validate + help |
 | `tools/tsctl.py` admin CLI | ✅ complete | with bugs fixed |
@@ -15,11 +15,13 @@ This is the **complete work list** to take the POC from "basic functional POC" (
 | Parallel POC with Headscale (`headscale/`) | ✅ complete | parallel structure |
 | Documentation (ARCHITECTURE, MATURITY, decision-log, comparison, ROADMAP, POC_OPERATIONS) | ✅ complete | |
 | **Active Business Trial (`example-tailnet.com`)** | ✅ operational | Supports SSO + SCIM + custom OIDC |
-| **Phase A: ngrok + Authentik setup** | ✅ structurally complete | Missing your action: paste NGROK_AUTHTOKEN + configure SSO in admin console |
-| **Phase B: kind + EKS RBAC** | ✅ structurally complete | Missing your action: `eks/scripts/setup.sh` (requires kind installed) |
-| **Phase C: refined role matrix (viewers/externals/admins)** | ✅ complete | policy-v3-roles.hujson |
+| **Phase A: ngrok + Authentik setup** | ✅ structurally complete | Your action pending: paste NGROK_AUTHTOKEN + configure SSO in admin console |
+| **Phase B: kind + EKS RBAC** | ✅ structurally complete | Your action pending: `eks/scripts/setup.sh` (requires kind installed) |
+| **Phase C: refined roles matrix (viewers/externals/admins)** | ✅ complete | policy-v3-roles.hujson |
+| **Phase D: real lab refresh + live captures (Sep-2026)** | ✅ complete | `scripts/refresh_captures.sh` + `docs/captures/*.txt|png` + section 11d in `.docx` |
+| **Phase E: web UI screenshots via chrome headless** | ✅ complete | 10 PNGs in `docs/captures/screenshots/` (5 services not reachable from host, documented) |
 
-## What is missing (roadmap)
+## What's missing (roadmap)
 
 ### Phase A — ngrok + Authentik + real SSO (Level 1)
 
@@ -33,11 +35,11 @@ This is the **complete work list** to take the POC from "basic functional POC" (
 5. [ ] Validate end-to-end SSO login
 6. [ ] Re-apply `policy.hujson` (with groups) and verify it works
 
-**Expected output:** the 6 Helios groups appear in Tailscale, `group:platform-eng@helios.example` resolves in policy.
+**Expected output:** the 6 Helios groups appear in Tailscale, `group:platform-eng@helios.example` resolves in the policy.
 
 ### Phase B — kind + EKS-like cluster (EKS simulation)
 
-**Why:** the user wants granular access to EKS. We need a realistic K8s cluster to test RBAC.
+**Why:** the user wants granular access to EKS. We need a realistic K8s cluster where we can test RBAC.
 
 **Tasks:**
 1. [ ] Install `kind` (Kubernetes in Docker)
@@ -48,15 +50,15 @@ This is the **complete work list** to take the POC from "basic functional POC" (
    - `role:k8s-editor` → + create/update/delete in designated namespaces
    - `role:k8s-admin` → cluster-admin
 5. [ ] kubeconfig with 3 contexts (one per role)
-6. [ ] Each context accessible via `tag:k8s-{viewer,editor,admin}` in Tailscale
+6. [ ] Each context reachable via `tag:k8s-{viewer,editor,admin}` in Tailscale
 
 **Expected output:** `heliosctl start eks` brings up the kind cluster + RBAC + kubeconfig.
 
-### Phase C — Specific Roles & permissions (granular access)
+### Phase C — Specific roles & permissions (granular access)
 
-**Why:** the pattern of "DMZ with privileges but no prod" + "least privilege" requires each group to have a well-defined scope.
+**Why:** the "DMZ with privileges but no prod" + "least privilege" pattern requires each group to have a well-defined scope.
 
-**Role matrix:**
+**Roles matrix:**
 
 | Group | EKS | RDS | Grafana | Intranet | Customer Portal |
 |---|---|---|---|---|---|
@@ -72,7 +74,7 @@ This is the **complete work list** to take the POC from "basic functional POC" (
 
 **Tasks:**
 1. [ ] Define the 9 roles in `identity/bootstrap/groups.json`
-2. [ ] Update `policy.hujson` with the role matrix
+2. [ ] Update `policy.hujson` with the roles matrix
 3. [ ] For each role, identify the apps/resources they need
 4. [ ] Validate with extended `verify.sh`
 
@@ -80,25 +82,25 @@ This is the **complete work list** to take the POC from "basic functional POC" (
 
 **Tasks:**
 1. [ ] kind cluster with ingress to expose internal services
-2. [ ] Tag `tag:eks-gateway` points to a service inside kind
+2. [ ] `tag:eks-gateway` points to a service inside kind
 3. [ ] RBAC verified by `kubectl auth can-i` from each context
 4. [ ] kubeconfig mounted in the persona containers
 
 ### Phase E — MiniStack + RDS sim + Secrets Manager + Authentik + kind
 
 **Tasks:**
-1. [ ] MiniStack serves as Secrets Manager (✅ already works)
+1. [ ] MiniStack serves as Secrets Manager (✅ already working)
 2. [ ] MiniStack RDS sim → postgres-as-a-service for an app that prefers it
-3. [ ] Authentik OIDC → kubeapps (K8s dashboard) for SSO on K8s
-4. [ ] Cross-cutting: `kubectl get secrets` must use MiniStack as backend
+3. [ ] Authentik OIDC → kubeapps (K8s dashboard) for SSO in K8s
+4. [ ] Cross-cutting: `kubectl get secrets` must use MiniStack as the backend
 
 ### Phase F — Demo and validation
 
 **Tasks:**
-1. [ ] Document demo flow (what to test, what to show)
+1. [ ] Document the demo flow (what to test, what to show)
 2. [ ] Create `scripts/demo.sh` that runs the verification matrix with colors
 3. [ ] Generate screenshots of the admin console
-4. [ ] Make a `RECORDING.md` with the scripted demo
+4. [ ] Write a `RECORDING.md` with the scripted demo
 
 ## Pending decisions
 
@@ -109,22 +111,22 @@ This is the **complete work list** to take the POC from "basic functional POC" (
 | Where to host kind? | local Docker / cloud VM | local for POC, cloud for staging |
 | IdP: Authentik or Google Workspace? | Authentik (in POC) / Google Workspace (in prod) | Authentik to validate, swap for prod |
 | Helm or kubectl apply? | Helm (cleaner) / kubectl (more direct) | kubectl for POC, Helm for prod |
-| CI? | GitHub Actions / local pre-commit | pre-commit now, Actions when it grows |
+| CI? | GitHub Actions / local pre-commit | pre-commit now, Actions as it grows |
 
 ## Suggested order
 
 1. **Phase A** (ngrok + SSO) — unlocks `group:X` in policy
-2. **Phase C** (role matrix) — refines the policy
+2. **Phase C** (roles matrix) — refines the policy
 3. **Phase B + D** (kind + EKS) — adds the K8s component
-4. **Phase E** (total integration) — unifies everything
-5. **Phase F** (demo) — packages it for presentation
+4. **Phase E** (full integration) — ties it all together
+5. **Phase F** (demo) — packages for presentation
 
-## Time estimation
+## Time estimate
 
 | Phase | Estimated time |
 |---|---|
 | A — ngrok + SSO | 2-3 hours |
-| C — Role matrix | 1-2 hours (refining policy.hujson) |
+| C — Roles matrix | 1-2 hours (refining policy.hujson) |
 | B + D — kind + EKS | 3-4 hours (install + workloads + RBAC + tags) |
 | E — Integration | 2-3 hours |
 | F — Demo + docs | 2-3 hours |
@@ -136,6 +138,6 @@ This is the **complete work list** to take the POC from "basic functional POC" (
 |---|---|
 | ngrok free URL changes every restart | ngrok paid + custom domain |
 | Authentik is not production-grade | document the swap to Google Workspace |
-| kind is not real EKS (some features missing: IAM, ALB, etc.) | document differences |
+| kind is not real EKS (some features missing: IAM, ALB, etc.) | document the differences |
 | SSO setup requires coordination with admin console (manual) | document step by step |
 | Policy becomes complex with groups | modularize into files per role |

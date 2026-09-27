@@ -1,4 +1,4 @@
-# Helios POC — Operational guide
+# Helios POC — Operations Guide
 
 This is the "how to actually run this thing" guide for the POC. It assumes you already have Docker + ngrok + kind + kubectl installed.
 
@@ -21,13 +21,52 @@ $EDITOR .env  # paste TS_AUTHKEY_* + NGROK_AUTHTOKEN + passwords
 ./scripts/demo.sh --fast
 
 # 5. Clean up
-./scripts/heliosctl stop all   # stop containers, keep state
+./scripts/heliosctl stop all   # stops containers, keeps state
 ./scripts/heliosctl destroy    # nuke EVERYTHING
 ```
 
+## Refresh the lab (capture everything)
+
+A one-command lab refresh re-runs the POC and dumps every output (terminal transcripts, JSON, PNG diagrams and chrome headless screenshots of each web UI) into `docs/captures/`:
+
+```bash
+./scripts/refresh_captures.sh                 # full run, ~2 min
+./scripts/refresh_captures.sh --no-screenshots   # skip chrome (no GUI in CI)
+```
+
+What the script captures:
+
+| Source | Output file |
+|---|---|
+| `heliosctl validate` (host view) | `validate_host.txt` |
+| `heliosctl status` | `status_full.txt` |
+| `heliosctl validate` (with `TAILSCALE_API_KEY`) | `validate_final.txt` |
+| `docker exec <svc> python3 urllib /healthz` per service | `health_probes.txt` |
+| `tailscale status` from each sidecar | `tailscale_status.txt` |
+| MagicDNS view from `ts-admin-portal` sidecar | `admin_peers.txt` |
+| `tsctl.py policy get` (live HuJSON) | `live_policy_full.txt` + `live_policy_head.txt` |
+| `cross_service_real.py` (admin-portal -> 4 peers via 100.x overlay) | `cross_service_real.txt` |
+| `isolation_test.sh` (segregated docker networks) | `isolation_test_output.txt` |
+| `demo.sh --fast` (last 30 lines) | `demo_run.log` |
+| `verify.sh` (last 30 lines) | `verify_run.log` |
+| chrome headless screenshots (10 web UIs incl. Authentik via ngrok) | `screenshots/*.png` |
+
+After running it, regenerate the .docx so section 11d shows the latest evidence:
+
+```bash
+python3 scripts/generate_docs.py
+# writes docs/Helios-POC-Documentation.docx with 8 screenshots + terminal blocks embedded
+```
+
+### Live lab state (Sep-27-2026 refresh)
+
+Latest run output: `heliosctl validate` shows 7/7 checks pass, 9 of 13 sidecars logged into the live tailnet, 6 of 10 services responding HTTP 200 on `/healthz`, ngrok public URL active at `https://sardine-overact-blast.ngrok-free.dev`, Authentik OIDC discovery 200 via that URL.
+
+`refresh_captures.sh` is idempotent — safe to run as many times as needed.
+
 ## Detailed setup (first time)
 
-### 1. System prereq
+### 1. System prerequisites
 
 ```bash
 # Docker + Compose v2
@@ -61,9 +100,9 @@ cp .env.example .env
 # Paste TAILSCALE_API_KEY (optional, only for tsctl.py admin)
 # Paste NGROK_AUTHTOKEN
 
-# If you have Tailscale Business trial, the Google Workspace groups arrive via SSO
+# If you have a Tailscale Business trial, the Google Workspace groups come in via SSO
 # and you can use acl/policy.hujson (the original with groups)
-# If NOT, use acl/policy-poc-no-groups.hujson (the one that works on any plan)
+# If not, use acl/policy-poc-no-groups.hujson (the one that works on any plan)
 ```
 
 ### 4. Bring up the stack
@@ -79,53 +118,53 @@ cp .env.example .env
 # → 7. personas (8 personas)
 ```
 
-Total time: 2-5 minutes the first time (image builds).
+Total time: 2-5 minutes the first time (image build).
 
 ### 5. Verify
 
 ```bash
-./scripts/heliosctl status         # state of the 7 components
+./scripts/heliosctl status         # status of the 7 components
 ./scripts/heliosctl validate       # 7 end-to-end checks
 ./scripts/heliosctl verify         # allow/deny matrix (30+ cases)
-./scripts/demo.sh                  # guided demo step by step
+./scripts/demo.sh                  # step-by-step guided demo
 ```
 
 ## Troubleshooting
 
 ### "all predefined address pools have been fully subnetted"
 
-**Cause:** Docker ran out of `/16` blocks available for bridge networks. Each isolated `networks:` in `docker-compose.yml` asks for a new subnet.
+**Cause:** Docker ran out of available `/16` blocks for bridge networks. Each isolated `networks:` in `docker-compose.yml` asks for a new subnet.
 
 **Workarounds:**
 
 ```bash
-# 1. Clean up unused networks
+# 1. Clean unused networks
 docker network prune -f
 
-# 2. If still no space, increase Docker's pool:
+# 2. If you still run out, increase the Docker pool:
 #    /etc/docker/daemon.json:
 {
   "default-address-pools": [
-    {"base": "172.20.0.0/14", "size": 22},  # 1024 networks /22
-    {"base": "192.168.0.0/16", "size": 24}  # 256 networks /24
+    {"base": "172.20.0.0/14", "size": 22},  # 1024 /22 networks
+    {"base": "192.168.0.0/16", "size": 24}  # 256 /24 networks
   ]
 }
 # sudo systemctl restart docker
 ```
 
-**Alternative:** consolidate networks in docker-compose (lose the isolation guarantee but fewer networks).
+**Alternative:** consolidate networks in docker-compose (lose the isolation guarantee, but fewer networks).
 
 ### "groups not found" when applying policy.hujson
 
-**Cause:** the policy references `group:platform-eng@helios.example` but Tailscale does not know those groups (no SSO configured).
+**Cause:** the policy references `group:platform-eng@helios.example` but Tailscale doesn't know those groups (no SSO configured).
 
-**Solution:** use `acl/policy-poc-no-groups.hujson` instead of `policy.hujson`. The difference is that the POC does not use groups (only tags + autogroup:admin).
+**Solution:** use `acl/policy-poc-no-groups.hujson` instead of `policy.hujson`. The difference is that the POC doesn't use groups (only tags + autogroup:admin).
 
 ```bash
 python3 ../tools/tsctl.py policy set acl/policy-poc-no-groups.hujson
 ```
 
-### "permission denied" when doing `docker exec`
+### "permission denied" on `docker exec`
 
 Cause: the sidecar container has `NET_ADMIN` and the devices. If your user is not in the `docker` group, it fails.
 
@@ -136,21 +175,21 @@ newgrp docker
 
 ### "TS_AUTHKEY has been used" or "key not found"
 
-Auth keys are consumed ONCE when the sidecar first starts. If you want to reset:
+Auth keys are consumed ONCE when the sidecar comes up for the first time. If you want to reset:
 
 ```bash
 docker compose down
-docker volume rm <name>-state  # remove the sidecar state
-./scripts/heliosctl restart services  # use a new auth key
+docker volume rm <name>-state  # delete the sidecar's state
+./scripts/heliosctl restart services  # use a fresh auth key
 ```
 
-### Tailscale sidecars do not register with the control plane
+### Tailscale sidecars don't register with the control plane
 
-**Symptoms:** in `heliosctl status`, the services appear "running" but `tailscale status` inside the container says "not logged in".
+**Symptoms:** in `heliosctl status`, services show "running" but `tailscale status` inside the container says "not logged in".
 
 **Common causes:**
 - Auth key pasted incorrectly (typo, expired key)
-- Container `ts-*` cannot reach `controlplane.tailscale.com` (DNS issue)
+- `ts-*` container can't reach `controlplane.tailscale.com` (DNS issue)
 - Tailscale SaaS rejects the auth key because it was already used
 
 **Debug:**
@@ -159,24 +198,24 @@ docker compose exec ts-admin-portal tailscaled --help
 docker compose logs ts-admin-portal | grep -i error
 ```
 
-## Frequent commands (cheatsheet)
+## Common commands (cheatsheet)
 
 | Action | Command |
 |---|---|
-| Bring up everything | `heliosctl start all` |
+| Bring everything up | `heliosctl start all` |
 | Services only | `heliosctl start services` |
 | Personas only | `heliosctl start personas` |
 | Full status | `heliosctl status` |
 | Re-apply policy | `heliosctl policy` |
 | Regenerate auth keys | `heliosctl authkeys` |
-| Logs of a service | `heliosctl logs admin-portal` |
-| Shell in a container | `heliosctl exec diego-platform bash` |
+| Logs for a service | `heliosctl logs admin-portal` |
+| Shell into a container | `heliosctl exec diego-platform bash` |
 | Restart everything | `heliosctl restart all` |
 | Stop everything | `heliosctl stop all` |
 | Nuke EVERYTHING | `heliosctl destroy` |
 | Validate setup | `heliosctl validate` |
 | Guided demo | `scripts/demo.sh` |
-| Allow/deny test | `heliosctl verify` |
+| Test allow/deny | `heliosctl verify` |
 | Add service | `heliosctl add service <name> --tag tag:X` |
 | Add persona | `heliosctl add persona <name>` |
 | Remove service | `heliosctl remove service <name>` |
@@ -188,33 +227,33 @@ docker compose logs ts-admin-portal | grep -i error
 
 ```bash
 heliosctl start all
-heliosctl status          # show that everything is running
+heliosctl status          # show everything is running
 heliosctl verify          # show the allow/deny matrix
-scripts/demo.sh          # 7-step guided demo
-# leave running for questions
+scripts/demo.sh          # guided 7-step demo
+# leave it running for questions
 ```
 
 ### Workflow 2: Iterate on the policy
 
 ```bash
 # Edit acl/policy.hujson
-heliosctl policy          # re-applies
-heliosctl verify          # validates that the new policy passes the cases
+heliosctl policy          # re-apply
+heliosctl verify          # validate that the new policy passes the cases
 ```
 
 ### Workflow 3: Add a new service
 
 ```bash
 # 1. Create the service code
-mkdir apps/mi-servicio
+mkdir apps/my-service
 # Dockerfile, app.py, requirements.txt
 
-# 2. Add to the POC
-heliosctl add service mi-servicio --tag tag:mi-servicio
+# 2. Add it to the POC
+heliosctl add service my-service --tag tag:my-service
 # → generates auth key, appends to docker-compose.yml, adds to .env
 
 # 3. Add to the policy
-# edit acl/policy.hujson, add mi-servicio to tagOwners + acls
+# edit acl/policy.hujson, add my-service to tagOwners + acls
 
 # 4. Apply
 heliosctl policy
@@ -226,7 +265,7 @@ heliosctl restart services
 1. Set up Google Workspace OAuth client
 2. Configure Tailscale admin console → SSO
 3. Apply `acl/policy.hujson` (with groups)
-4. Login via Google → groups appear in Tailscale
+4. Log in via Google → groups appear in Tailscale
 
 (See `ngrok/README.md` for detailed setup with Authentik as IdP.)
 
@@ -252,7 +291,7 @@ kubectl auth can-i create pods --as=system:serviceaccount:kube-system:k8s-admin
 
 ## Differences with the original previous POC
 
-| Aspect | previous POC (orig) | Helios POC (this one) |
+| Aspect | previous POC (orig) | Helios POC (this) |
 |---|---|---|
 | Tag count | 9 | 13 (+ EKS roles) |
 | Policy versions | 1 | 4 (no-groups, v1, v2, v3) |
@@ -264,11 +303,11 @@ kubectl auth can-i create pods --as=system:serviceaccount:kube-system:k8s-admin
 | Guided demo | ❌ | ✅ scripts/demo.sh |
 | Dynamic CRUD | ❌ | ✅ add/remove |
 
-## Next steps for production
+## Next steps toward production
 
-See `MATURITY.md` and `ROADMAP.md`. Short:
+See `MATURITY.md` and `ROADMAP.md`. Short version:
 
-1. **Migrate to Headscale** if compliance requires on-prem (the same policy works)
+1. **Migrate to Headscale** if compliance asks for on-prem (the same policy works)
 2. **MDM rollout** (Apple Business Manager / Mosyle) — automates onboarding
 3. **Audit logging in SIEM** (Splunk / Datadog) — the `Tailscale-User-*` headers are already available
 4. **Alerts + runbook** — Prometheus is already integrated in observability
