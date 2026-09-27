@@ -1,83 +1,161 @@
-# Helios POC — Headscale self-hosted variant
+# Helios POC — Headscale (self-hosted variant)
 
-**Parallel POC to the Tailscale SaaS one**, using Headscale as a self-hosted control plane instead of Tailscale Inc.'s SaaS.
+Parallel POC to the Tailscale SaaS one, using **Headscale** as a self-hosted control plane instead of Tailscale Inc.'s SaaS.
 
-The policy (HuJSON ACL) is portable — the same access logic works in both control planes. What changes is the **control plane infrastructure**: in this POC, Headscale runs as a Docker container locally; in production, it would run in Helios's K8s cluster.
+**Simulated company:** Helios (B2B SaaS for AP automation aimed at fintechs). **IdP:** Google Workspace (via OIDC in Headscale, or Authentik as a local sim). **Services:** 10. **Personas:** 9.
 
-## Repo layout
+> **Why this POC exists:** the team wants to compare **side by side** the SaaS option vs self-hosted. The HuJSON policy is portable — the same access-control logic works in both. What changes is the **control-plane infrastructure**: in this POC, Headscale runs as a local Docker container; in prod, on a Helios K8s cluster.
 
-```
-.
-├── README.md               # this file
-├── ROADMAP.md              # full work plan
-├── POC_OPERATIONS.md       # cheatsheet, troubleshooting, workflows
-├── docker-compose.yml      # 10 services + personas + headscale control plane
-├── acl/                    # policy.hujson + variants (same as tailscale-poc)
-├── apps/                   # 10 Flask apps + Grafana + intranet
-├── identity/               # Authentik config + bootstrap
-├── ngrok/                  # tunnel for IdP SSO callback
-├── terraform/              # secrets module
-├── ministack/              # AWS-like simulator
-├── scripts/
-│   ├── heliosctl           # lifecycle CLI (start/stop/status/destroy/clean)
-│   ├── verify.sh           # 46-case allow/deny matrix
-│   ├── demo.sh             # 7-step guided demo
-│   ├── bootstrap.sh        # 1-shot setup for Headscale control plane + IdP + ministack
-│   └── generate_docs.py    # produces docs/Helios-POC-Documentation.docx
-├── docs/                   # captures + diagrams (PNG)
-├── headscale-config.yaml   # Headscale server config (DERP, OIDC, ACL mode)
-└── tools/
-    ├── hsctl.py            # admin CLI for Headscale (docker exec wrapper)
-    └── lib/, hsctl/        # helper modules
-```
+---
 
-## Quickstart
+## Differences with `tailscale/` (SaaS POC)
+
+| Aspect | `tailscale/` (SaaS) | `headscale/` (this one, self-hosted) |
+|---|---|---|
+| Control plane | Tailscale Inc. (https://controlplane.tailscale.com) | Local Headscale (this container) |
+| MagicDNS suffix | `.ts.net` | `.headscale.ts.net` or custom |
+| Authkey generation | Tailscale API or admin console | `headscale preauthkeys create` (via `hsctl`) |
+| DNS / DERP | Tailscale DERP servers | Default + optional custom |
+| OIDC | Yes (with SSO providers) | Yes (more control over flows) |
+| SCIM groups | Yes (Google Workspace native) | NOT native (requires custom sync) |
+| License | Tailscale pricing | Free (operate it yourself) |
+| Operation | SaaS handles HA, upgrades | You operate HA, upgrades, backup |
+
+**What is identical:**
+- `acl/policy.hujson` — the same policy works in both (standard HuJSON).
+- Apps in `apps/` — same ones (same Dockerfiles, same code).
+- Conceptual personas and groups — same roles, different identity sources.
+- Verification matrix in `scripts/verify.sh` — same cases, same expected results.
+
+---
+
+## How to run it
+
+### Prereq
+
+- Docker + Compose v2
+- Headscale runs as a container; no Tailscale account required
+- (Optional) Terraform ≥ 1.5 for MiniStack
+
+### Sequence
 
 ```bash
-# 1. Configure secrets
+# 1. Environment variables
+cd headscale/
 cp .env.example .env
-$EDITOR .env  # add NGROK_AUTHTOKEN, headscale URL, etc.
+$EDITOR .env  # paste TS_AUTHKEY_* (generated in step 2)
 
-# 2. Bootstrap control plane + IdP + ministack (1-shot)
-bash scripts/bootstrap.sh
+# 2. Bootstrap: create users and auth keys in Headscale
+docker compose up -d headscale   # bring up only the control plane first
+sleep 10  # wait for Headscale to be ready
+cd ../tools/
+python3 hsctl.py user create helios-admin
+python3 hsctl.py authkey create --user helios-admin --tag tag:admin-portal --reusable --days 30
+# (repeat for each tag and persona; or use the bootstrap script in headscale/scripts/bootstrap.sh)
 
-# 3. Validate POC is ready
-./scripts/heliosctl validate
+# 3. Apply policy
+python3 hsctl.py policy set ../headscale/acl/policy.hujson
 
-# 4. Bring up services + personas
-./scripts/heliosctl start services
-./scripts/heliosctl start personas
+# 4. Back to headscale/ and bring everything up
+cd ../headscale/
+docker compose up -d --build
 
-# 5. Apply ACL policy via Headscale CLI (inside container)
-docker exec tailscale-headscale-1 headscale nodes list
-docker exec tailscale-headscale-1 headscale policy set -f /etc/headscale/policy.hujson
-
-# 6. Run verification matrix
-bash scripts/verify.sh
+# 5. Verify
+./scripts/verify.sh
 ```
 
-See [POC_OPERATIONS.md](POC_OPERATIONS.md) for full workflows.
+### Cleanup
 
-## Comparison with `tailscale-poc`
+```bash
+docker compose down -v
+docker compose -f docker-compose.identity.yml down -v
+docker compose -f ministack/docker-compose.ministack.yml down -v
+```
 
-For the parallel POC using Tailscale SaaS as control plane, see [`cmarin78/tailscale-poc`](https://github.com/cmarin78/tailscale-poc).
+---
 
-Same architecture, same policies (HuJSON is portable), different control plane infra.
+## Structure
 
-## When to use Headscale vs Tailscale SaaS
+```
+headscale/
+├── README.md                       ← this file
+├── docker-compose.yml              ← services + headscale + identity + ministack
+├── headscale-config.yaml           ← control plane configuration
+├── .env.example
+├── acl/
+│   ├── policy.hujson               ← SAME policy as tailscale/ (portable)
+│   └── README.md
+├── apps/                           ← same apps as tailscale/apps/
+├── data/init/                      ← same SQL files
+├── identity/                       ← same Authentik (optional, you can use Google directly)
+├── scripts/
+│   ├── verify.sh                   ← SAME verification matrix as tailscale/scripts/verify.sh
+│   ├── bootstrap.sh                ← full bootstrap script
+│   └── hsctl                       ← (in /tools/) CLI for Headscale
+├── terraform/                      ← same secrets
+├── ministack/                      ← same AWS simulator
+└── docs/
+    ├── comparison.md               ← Tailscale SaaS vs Headscale side by side
+    └── personas.md
+```
 
-Use **Headscale** when:
-- Compliance requires on-prem control plane (SOC 2, HIPAA)
-- Budget allows for ~$50-80K/year in SRE time to operate it
-- Need multi-tailnet (Headscale supports, Tailscale SaaS doesn't)
-- Need custom features Tailscale Inc. refuses to implement
+---
 
-Use **Tailscale SaaS** when:
-- Want zero ops (SaaS handles backups, HA, updates)
-- Budget allows $30-50K/year for the SaaS license
-- Single tailnet is enough
-- Faster to set up (2 hours vs 1 day)
+## What this POC demonstrates vs `tailscale/`
 
-## License
+| Question | Answer |
+|---|---|
+| Does Headscale handle the same services? | ✅ Same containers, same flow |
+| Is the policy portable? | ✅ Yes, copy-paste works |
+| Does Headscale have MagicDNS? | ✅ Yes, with `dns.magic_dns: true` in config |
+| Does Headscale have DERP? | ✅ Default (Tailscale) + optional custom |
+| Does it work with OIDC? | ✅ `cfg.OIDC.Issuer`, supports Google Workspace |
+| SSH bastion-less? | ✅ Yes, same `ssh` section in policy |
+| AutoApprovers? | ✅ Yes |
+| Grants? | ✅ Yes |
+| Multi-user (multiple namespaces)? | ✅ Each user has its own nodes |
+| API for automation? | ✅ gRPC + REST (with config), or `headscale` CLI |
+| OAuth clients (like the SaaS)? | ⚠️ Limited — supported but with fewer features |
+| SCIM sync from Google Workspace? | ❌ Not native — needs custom sync (cron + API) |
 
-MIT — POC for evaluation purposes.
+---
+
+## Headscale-specific limitations vs SaaS
+
+| Limitation | Impact on Helios |
+|---|---|
+| SCIM not native | For automatic sync from Google → Headscale groups, you need to write a script (Python + Google Admin SDK + Headscale API). See `docs/scim-sync.md` when implemented. |
+| OAuth client (login via Google) | Exists but less polished than the SaaS. Google integration may require workarounds. |
+| MagicDNS suffix | Default is `headscale.ts.net` (a bit odd). Helios could use `helio.ts.net` by configuring `dns.base_domain`. |
+| HA | You need to run 2+ instances with a shared Postgres and a load balancer in front. SaaS gives that for free. |
+| Update cadence | Headscale releases frequently; requires manual updates. |
+| State backup | DB (Postgres or SQLite) is the source of truth — backup is mandatory. |
+
+---
+
+## What it is good for (and what it isn't)
+
+**Good for:**
+- Validating that the access pattern works specifically with Headscale.
+- Deciding between SaaS and self-hosted with concrete evidence.
+- Learning how to operate Headscale (release cycle, monitoring, debugging).
+- Having a realistic staging environment without spending on Tailscale.
+
+**Not good for:**
+- Evaluating performance at hundreds-of-nodes scale (POC has 20).
+- Validating disaster recovery (POC is single-instance).
+- Replacing the vendor decision in production — that requires a larger POC (weeks, not hours).
+
+---
+
+## Recommended next step
+
+After running this POC and the `tailscale/` one side by side:
+
+1. Compare admin ergonomics (which is easier?).
+2. Compare latency (how long does a change take to propagate?).
+3. Compare error messages (are they clear?).
+4. Compare Google Workspace integration (how much extra work does Headscale require?).
+5. Try a real case: add a new service, evict a device, rotate an auth key.
+
+The results of these 5 points go into `docs/comparison.md` which documents the final decision.
