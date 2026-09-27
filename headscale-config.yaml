@@ -1,0 +1,120 @@
+# Helios POC — Headscale config
+# =========================================================================
+# This file configures the Headscale control plane that runs as a container.
+# Key differences vs `config-example.yaml` upstream:
+#   - OIDC enabled against Google Workspace (issuer + client_id)
+#   - DNS: MagicDNS enabled with suffix "helio.ts.net"
+#   - PrefixV4/V6: 100.64.0.0/10 and fd7a:115c:a1e0::/48 (Tailscale standard)
+#   - DB: SQLite (local); in prod, Postgres
+#   - DERP: uses Tailscale's default + optional custom
+#
+# Docs: https://headscale.net/running/configuration/
+# =========================================================================
+
+# --- Public URL of the control plane ---
+# In this POC, the clients (tailscale clients) point to this URL.
+# In prod, it goes behind a reverse proxy with TLS.
+server_url: http://localhost:8080
+listen_addr: 0.0.0.0:8080
+metrics_listen_addr: 0.0.0.0:9090
+
+# --- IP prefixes (same as Tailscale assigns to its clients) ---
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
+  allocation: sequential
+
+# --- Base domain for MagicDNS ---
+# Nodes become accessible as <hostname>.helio.ts.net
+# We choose "helio.ts.net" here so it's easy to recognize.
+dns:
+  base_domain: helio.ts.net
+  magic_dns: true
+  nameservers.global:
+    - 1.1.1.1
+    - 8.8.8.8
+
+# --- DERP ---
+# Uses Tailscale's DERP servers by default. In prod, we can host
+# our own DERP (lower latency + sovereignty).
+derp:
+  server:
+    enabled: false
+    region_id: 999
+    region_code: "helios"
+    region_name: "Helios Embedded DERP"
+    stun_listen_addr: "0.0.0.0:3478"
+  urls:
+    - https://controlplane.tailscale.com/derpmap/default
+  paths: []
+  auto_update_enabled: true
+  update_frequency: 24h
+
+# --- Database ---
+# SQLite is enough for the POC. In prod use Postgres:
+#   type: postgres
+#   postgres:
+#     host: ...
+#     name: headscale
+#     user: headscale
+#     pass: ...
+dbtype: sqlite
+sqlite:
+  path: /var/lib/headscale/db.sqlite
+
+# --- Private key for Noise protocol (TS2021) ---
+# If missing, Headscale generates it automatically. Persist in a volume.
+private_key_path: /var/lib/headscale/private.key
+noise:
+  private_key_path: /var/lib/headscale/noise_private.key
+
+# --- OIDC: Google Workspace integration ---
+# This lets users log into Headscale with their Google account.
+# The "issuer" points at Google's discovery endpoint; Headscale consumes
+# the JWKS and validates the tokens.
+#
+# In the POC we could also use Authentik as a sim (see docker-compose.identity.yml).
+# We leave the Google Workspace block here; comment one or the other per environment.
+oidc:
+  only_start_if_oidc_is_available: true
+  issuer: https://accounts.google.com        # Google Workspace OIDC
+  client_id: REPLACE_WITH_GOOGLE_OAUTH_CLIENT_ID
+  client_secret: REPLACE_WITH_GOOGLE_OAUTH_CLIENT_SECRET
+  scope: ["openid", "email", "profile"]
+  extra_params:
+    domain_hint: helios.example
+    prompt: select_account
+  # Map Google claims → user in Headscale
+  claim_mapping:
+    sub: sub
+    email: email
+    name: name
+  # Auto-create users the first time they log in (no pre-creation needed)
+  automatic_login: true
+
+# If we wanted to use Authentik in the POC (alternative to the block above):
+# oidc:
+#   only_start_if_oidc_is_available: false
+#   issuer: http://authentik-server:9000/application/o/helios-tailnet/
+#   client_id: helios-tailnet-client
+#   client_secret: helios-tailnet-secret-...
+#   scope: ["openid", "email", "profile", "groups"]
+#   automatic_login: true
+
+# --- Logging ---
+log:
+  level: info
+  format: text
+
+# --- Policies ---
+# Policies are applied via `hsctl.py policy set ...` or `headscale policy set`.
+# They are not hardcoded here; they live in `acl/policy.hujson`.
+policy:
+  path: ""
+
+# --- Ephemeral nodes (auto-cleanup) ---
+ephemeral_node_inactivity_timeout: 30m
+
+# --- Other configs ---
+unix_socket: /var/run/headscale/headscale.sock
+unix_socket_permission: "0770"
