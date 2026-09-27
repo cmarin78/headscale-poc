@@ -1,0 +1,50 @@
+
+╔════════════════════════════════════════════════════════════════╗
+║  Helios POC — End-to-end demo                                  ║
+╚════════════════════════════════════════════════════════════════╝
+
+This demo walks through 7 steps:
+  1. Validate the setup
+  2. Bring up the full stack
+  3. Show the tailnet (devices in Tailscale)
+  4. Verify the applied policy
+  5. Validate RBAC of the simulated EKS cluster
+  6. Show the allow/deny matrix (verify.sh)
+  7. Clean up / leave it running
+
+Total time: ~5 minutes (with --fast: ~1 minute)
+
+─── Step 1: Setup validation ──────────────────────────────────────────
+
+→ Running heliosctl validate...
+ℹ 2. Check docker-compose.yml
+✓   docker-compose.yml is valid
+
+ℹ 3. Check apps/ have Dockerfile OR base image
+✓   all apps have a Dockerfile or base image
+
+ℹ 4. Check acl/policy.hujson (JSONC)
+  ✓ valid JSONC: 13 acls, 4 ssh, 12 tags
+
+ℹ 5. Check running containers
+⚠   9/18 containers running (some missing — sandbox pool limit?)
+ℹ   run: heliosctl restart all (may fail due to docker network pool)
+
+ℹ 6. Check Tailscale API access
+ℹ   TAILSCALE_API_KEY not set — skip
+
+ℹ 7. Check ngrok
+✓   ngrok running: https://sardine-overact-blast.ngrok-free.dev
+
+✓ ✓ Validation OK — POC ready to use
+
+─── Step 2: Bring up the full stack ──────────────────────────────────────────
+
+→ See what's running before...
+
+== Helios POC — status ==
+
+Services:
+  NAME                   STATE       
+  admin-portal           missing     
+  identity-bridge        missing     
